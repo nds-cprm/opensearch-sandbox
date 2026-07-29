@@ -1,0 +1,32 @@
+# Example from below url
+# https://docs.opensearch.org/latest/install-and-configure/install-dashboards/docker/#run-opensearch-dashboards-using-docker
+
+server.name: opensearch_dashboards
+server.host: "0.0.0.0"
+server.customResponseHeaders : { "Access-Control-Allow-Credentials" : "true" }
+# server.maxPayloadBytes: 1048576
+  
+# Disabling HTTPS on OpenSearch Dashboards
+server.ssl.enabled: false
+
+
+opensearch.hosts: ["https://localhost:9200"] 
+  
+opensearch.ssl.verificationMode: none
+opensearch.username: kibanaserver
+opensearch.password: kibanaserver
+opensearch.requestHeadersWhitelist: ["securitytenant","Authorization"]
+  
+# Multitenancy
+opensearch_security.multitenancy.enabled: true
+opensearch_security.multitenancy.tenants.preferred: ["Private", "Global"]
+opensearch_security.readonly_mode.roles: ["kibana_read_only"]
+
+# Enhanced Discover experience available
+# Set the value to true to enable multiple data source feature
+data_source.enabled: true
+
+# Set the value to true to enable workspace feature
+# workspace.enabled: true
+# Set the value to true to enable explore feature
+# explore.enabled: true

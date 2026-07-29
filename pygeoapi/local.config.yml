@@ -1,0 +1,69 @@
+server:
+  bind:
+    host: 0.0.0.0
+    port: 80
+  url: ${PYGEOAPI_SERVER_URL:-http://localhost:5000}
+  mimetype: application/json; charset=UTF-8
+  encoding: utf-8
+  gzip: false
+  language: en-US
+  cors: true
+  pretty_print: true
+  # admin: ${PYGEOAPI_SERVER_ADMIN:-false}
+  limits:
+    default_items: 10
+    max_items: 50
+  # templates: /path/to/templates
+  map:
+    url: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+  ogc_schemas_location: /schemas.opengis.net
+
+logging:
+  level: INFO
+
+metadata:
+  identification:
+    title:
+      en: My Local Geospatial API
+    description:
+      en: A pygeoapi instance serving local geospatial data.
+    keywords:
+      en:
+        - geospatial
+        - api
+        - OGC
+    terms_of_service: https://creativecommons.org/licenses/by/4.0/
+    url: http://localhost:5000
+  license:
+    name: CC-BY 4.0 license
+    url: https://creativecommons.org/licenses/by/4.0/
+  provider:
+    name: My Organization
+    url: https://example.org
+  contact:
+    name: Team, Geo
+    email: geoteam@example.org
+
+resources:
+  opensearch_demo:
+    type: collection
+    title: Sample GeoJSON Layer
+    description: A sample collection serving point features from a local GeoJSON file.
+    keywords:
+      - points
+      - sample
+    extents:
+      spatial:
+        bbox: [-73.9872, -33.7684, -28.6341, 5.2843]
+        crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+      - type: feature
+        name: OpenSearch
+        editable: false  # optional, default is false
+        data: http://admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD}@nginx:9200/litoestratigrafia_1m
+        id_field: fid
+        # time_field: datetimefield
+        # properties:
+        #   - nome
+        #   - legenda

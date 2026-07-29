@@ -1,0 +1,106 @@
+MAP
+  NAME "CONEXAO_OPENSEARCH"
+  STATUS ON
+  SIZE 800 600
+  EXTENT -70 -40 -30 10
+  UNITS DD
+  SHAPEPATH "./data"
+  IMAGECOLOR 255 255 255
+  DEBUG 5
+
+  WEB
+    METADATA
+      "wms_title"            "Meu Servidor de Mapas WMS"
+      "wms_abstract"         "Serviço de mapas dinâmico rodando em Docker e FastCGI."
+      "wms_onlineresource"   "http://localhost/mapserver?" # URL base do serviço
+      "wms_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
+      "wms_enable_request"   "*"                               # Permite GetCapabilities, GetMap, etc.
+    END
+  END
+
+  PROJECTION
+    "init=epsg:4326"
+  END
+
+  # -----------------------------------------------------------------
+  # Camada conectada ao OpenSearch via OGR
+  # -----------------------------------------------------------------
+  LAYER
+    NAME "poligonos_opensearch"
+    TEMPLATE "empty" 
+
+    METADATA
+      "wms_title"         "OpenSearch teste"
+      "wms_abstract"      "Camada de teste para acesso no OpenSearch"
+      "wms_enable_request" "*"
+      "wms_include_items"  "all"
+      "gml_include_items"  "all"
+    END
+
+    TYPE POLYGON
+    STATUS ON
+    
+    # Define o tipo de conexão utilizando a biblioteca interna OGR
+    CONNECTIONTYPE OGR
+    
+    # String de conexão apontando para o endpoint e índice do OpenSearch
+    # Sintaxe: Elasticsearch:http://host:porta/nome_do_indice
+    # CONNECTION "ES:http://opensearch-node1:9200"
+    CONNECTION "ES:http://nginx:9200"   # O GDAL não suporta multiplas instâncias de OpenSearch
+    
+    CONNECTIONOPTIONS
+      "BATCH_SIZE" "2000"
+    END
+    
+    # Caso seu OpenSearch exija autenticação, envie via cabeçalho HTTP:
+    # OGR_HTTP_HEADERS "Authorization: Basic bXlfdXNlcjpteV9wYXNzd29yZA=="
+
+    # Especifica qual campo/propriedade possui a geometria (ex: geo_point ou geo_shape)
+    # DATA "litoestratigrafia_1m_20260728_192458"
+    DATA "SELECT properties.fid AS fid, 
+                 properties.id_uni_estratigrafica AS id_uni_estratigrafica,
+                 properties.sigla AS sigla,
+                 properties.hierarquia AS hierarquia,
+                 properties.nome AS nome, 
+                 properties.amb_tecto AS amb_tecto,
+                 properties.sub_amb_tectonico AS sub_amb_tectonico,
+                 properties.sigla_pai AS sigla_pai,
+                 properties.nome_pai AS nome_pai,
+                 properties.legenda AS legenda, 
+                 properties.escala AS escala,
+                 properties.mapa AS mapa,
+                 properties.litotipos AS litotipos,
+                 properties.range AS range,
+                 properties.idade_min AS idade_min,
+                 properties.idade_max AS idade_max,
+                 properties.eon_min AS eon_min,
+                 properties.eon_max AS eon_max,
+                 properties.era_min AS era_min,
+                 properties.era_max AS era_max,
+                 properties.sistema_min AS sistema_min,
+                 properties.sistema_max AS sistema_max,
+                 properties.epoca_min AS epoca_min,
+                 properties.epoca_max AS epoca_max,
+                 properties.siglas_historicas AS siglas_historicas,
+                 properties.grupo AS grupo,
+                 geometry 
+            FROM litoestratigrafia_1m_20260728_192458"
+
+    
+
+    PROJECTION
+      "init=epsg:4326"
+    END
+
+    # Estilização visual para renderizar os pontos no mapa
+    CLASS
+      NAME "Areas do OpenSearch"
+      STYLE
+        COLOR 50 150 250               # Cor de preenchimento (Azul)
+        OPACITY 60                     # Transparência do preenchimento (0-100)
+        OUTLINECOLOR 0 0 150           # Cor da borda (Azul Escuro)
+        WIDTH 1.5                      # Espessura da borda
+      END
+    END
+  END
+END
