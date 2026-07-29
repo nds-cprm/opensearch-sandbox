@@ -1,0 +1,18 @@
+<Map background-color="blue" srs="epsg:4326">
+  <Style name="teste">
+    <Rule>
+      <PolygonSymbolizer /> 
+    </Rule>
+  </Style>
+  <Layer>
+    <StyleName>teste</StyleName>
+    <Datasource>
+      <Parameter name="type">ogr</Parameter>
+      <!-- <Parameter name="file">ES:http://localhost:9200</Parameter> -->
+      <Parameter name="file">/mapproxy/teste.vrt</Parameter>
+      <Parameter name="layer">litoestratigrafia_1m_20260727_222038</Parameter>
+      <!-- <Parameter name="layer_by_sql">SELECT geometry, * FROM litoestratigrafia_1m_20260727_222038</Parameter> -->
+      <Parameter name="extent">-180,-90,180,90</Parameter>
+    </Datasource>
+  </Layer>
+</Map>
