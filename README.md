@@ -3,11 +3,11 @@ Laboratório de ensaios para o uso de OpenSearch como fonte de dados GIS
 
 
 ## Versões avaliadas: 
-- 2.12.0 
-- 2.19.6 (Últiva versão estável de 2.x)
+- 2.12.0 [(Versão homologada pela ESRI)](https://doc.esri.com/en/arcgis-pro/latest/help/data/databases/database-reqs-opensearch.html)
+- 2.19.6 [(Últiva versão estável de 2.x)](https://opensearch.org/releases/)
 
 ## Clientes esperados
-- **ArcGIS 12.x**: Exposição de indices como FeatureLayers. https://doc.esri.com/en/arcgis-pro/latest/help/data/databases/database-reqs-opensearch.html
+- **ArcGIS 12.x**: Exposição de indices como FeatureLayers. 
 - **Apache Airflow**, para processamento de pipelines dos bacnos corporativos para o OpenSearch.
 - **Mapserver**, para a estilização dos mapas e fonte para WFS (Considerando depreciar para usar OGC API Features)
 - **MapProxy**, para disponibilização de serviços cacheados de WMS, WMS-C, WMTS e KML - Lidos a partir do **MapServer**.
