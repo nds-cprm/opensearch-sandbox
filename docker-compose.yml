@@ -12,6 +12,7 @@ services:
       # Disable SSL
       - DISABLE_SECURITY_PLUGIN=true
       - DISABLE_INSTALL_DEMO_CONFIG=true
+      - compatibility.override_main_response_version=true
     ulimits:
       memlock:
         soft: -1 # Set memlock to unlimited (no soft or hard limit)
@@ -39,6 +40,7 @@ services:
       # Disable SSL
       - DISABLE_SECURITY_PLUGIN=true
       - DISABLE_INSTALL_DEMO_CONFIG=true
+      - compatibility.override_main_response_version=true
     ulimits:
       memlock:
         soft: -1
