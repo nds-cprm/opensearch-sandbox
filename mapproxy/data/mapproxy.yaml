@@ -63,7 +63,7 @@ sources:
       featureinfo: true
       legendgraphic: true
     req:
-      url: "http://nginx:8081/mapserver?MAP=default&"
+      url: "http://nginx:8081/geoserver?MAP=default&"
       layers: CONEXAO_OPENSEARCH
       # the layer only covers Brazil: keep the rest of the tiles transparent
       transparent: true

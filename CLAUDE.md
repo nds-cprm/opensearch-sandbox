@@ -31,8 +31,8 @@ Verificações pela stack em execução:
 ```bash
 curl -s 'http://localhost:9200/_cluster/health?pretty'     # esperado: green, 2 nós
 curl -s 'http://localhost:9200/_cat/indices?v'
-curl -sk 'https://localhost/mapserver/ows?SERVICE=WFS&REQUEST=GetCapabilities'
-curl -sk 'https://localhost/mapserver/ows?SERVICE=WMS&REQUEST=GetCapabilities'
+curl -sk 'https://localhost/geoserver/ows?SERVICE=WFS&REQUEST=GetCapabilities'
+curl -sk 'https://localhost/geoserver/ows?SERVICE=WMS&REQUEST=GetCapabilities'
 ```
 
 Massa de teste (dados fictícios, usa só a biblioteca padrão do Python):
@@ -51,12 +51,12 @@ O nginx é a entrada única. A porta 443 do host vai para o `:8443` do nginx, co
 | Rota | Upstream | Protocolo |
 | --- | --- | --- |
 | `/ogcapi` | `pygeoapi:8000` | uwsgi |
-| `/mapserver/ows`, `SERVICE=WMS` | `mapproxy:8000` | uwsgi |
-| `/mapserver/ows`, `SERVICE=WFS` ou `WCS` | `mapserver:8080` | FastCGI |
-| `:8081/mapserver` (interna, com WMS) | `mapserver:8080` | FastCGI |
+| `/geoserver/ows`, `SERVICE=WMS` | `mapproxy:8000` | uwsgi |
+| `/geoserver/ows`, `SERVICE=WFS` ou `WCS` | `mapserver:8080` | FastCGI |
+| `:8081/geoserver` (interna, com WMS) | `mapserver:8080` | FastCGI |
 | `:9200/` | `opensearch-node1` e `opensearch-node2` | HTTP |
 
-Fluxo de dados: `MapProxy → nginx:8081 → MapServer → OpenSearch`, e `pygeoapi → OpenSearch` em paralelo. O ponto único para clientes externos é `/mapserver/ows`, que decide o destino pelo `SERVICE`. Não há rota `/mapproxy`, e a API OGC fica em `/ogcapi`.
+Fluxo de dados: `MapProxy → nginx:8081 → MapServer → OpenSearch`, e `pygeoapi → OpenSearch` em paralelo. O ponto único para clientes externos é `/geoserver/ows`, que decide o destino pelo `SERVICE`. O contexto `/geoserver` é proposital, porque esta stack vai substituir `https://geoservicos.sgb.gov.br/geoserver` e `/ogcapi`, mas não há GeoServer aqui: quem responde é o MapServer ou o MapProxy. O que falta para a troca está em `docs/troca-do-geoserver.md`. Não há rota `/mapproxy`, e a API OGC fica em `/ogcapi`.
 
 Pontos que atravessam vários arquivos:
 
@@ -68,9 +68,9 @@ Pontos que atravessam vários arquivos:
 - **Ordem de subida.** Primeiro os nós OpenSearch, com healthcheck de `_cluster/health`; depois os serviços; por último o nginx, que não inicia sem resolver os upstreams. O pygeoapi não pode depender do nginx, porque isso cria um ciclo, e o nginx usa `service_started` para ele: o pygeoapi só fica `healthy` depois de gerar o OpenAPI, o que passa pelo nginx. Trocar para `service_healthy` trava a subida.
 - **Timeouts acoplados.** O `harakiri` de 60 s do uWSGI anda junto com `uwsgi_read_timeout 65s` no nginx. Ao mudar um, mude o outro. O MapServer não tem timeout próprio e depende de `fastcgi_read_timeout 60s`.
 - **Configuração do pygeoapi.** O serviço lê `PYGEOAPI_CONFIG`, e `pygeoapi/local.config.yml` é montado nesse caminho (`/run/pygeoapi/config.yml`). Sem a variável, a imagem lê `/etc/pygeoapi/config.yml`, um exemplo com `resources: {}`. O uWSGI só lê `pygeoapi/uwsgi.conf` ao iniciar: depois de editá-lo, reinicie o serviço.
-- **URL anunciada pelo MapProxy.** O `location @ows_wms` envia `SCRIPT_NAME=/mapserver` e `PATH_INFO=/ows`, o despachante do MapProxy. É isso que faz o `GetCapabilities` anunciar `/mapserver/ows`. Os dois `uwsgi_param` precisam ficar depois de `include uwsgi_params`, porque o último `PATH_INFO` vence.
+- **URL anunciada pelo MapProxy.** O `location @ows_wms` envia `SCRIPT_NAME=/geoserver` e `PATH_INFO=/ows`, o despachante do MapProxy. É isso que faz o `GetCapabilities` anunciar `/geoserver/ows`. Os dois `uwsgi_param` precisam ficar depois de `include uwsgi_params`, porque o último `PATH_INFO` vence.
 - **Porta real do pygeoapi.** O `server.bind.port` da configuração não define onde o serviço escuta. Com `pygeoapi/uwsgi.conf`, a porta vem de `PYGEOAPI_LISTEN_PORT` (8000 por padrão na imagem), usando o protocolo uwsgi, não HTTP.
-- **Prefixo do pygeoapi.** `/ogcapi` aparece em `SCRIPT_NAME` e `PYGEOAPI_SERVER_URL` no compose, em `mount` no `uwsgi.conf` e no `uwsgi_param` do nginx. Mudanças de prefixo precisam tocar os três.
+- **Prefixo do pygeoapi.** `/ogcapi` aparece em `SCRIPT_NAME` e `PYGEOAPI_SERVER_URL` no compose, em `mount` no `uwsgi.conf` e no `location` e no `uwsgi_param` do nginx. Mudanças de prefixo precisam tocar os três.
 
 ### MapServer
 
@@ -80,12 +80,12 @@ Pontos que atravessam vários arquivos:
 - Também é possível usar o caminho, desde que case com `MS_MAP_PATTERN` (`^/var/lib/mapserver/`).
 - Sem `map=`, a requisição falha de propósito (`MS_MAPFILE ""`).
 
-A rota externa é uma lista de permissão, definida no `map $args $ows_destino` do nginx. Aceita `GET` e `HEAD` em `/mapserver/ows`, com um único `service=wms|wfs|wcs`, e não deve ser trocada por bloqueios pontuais, porque há outros caminhos até um mapa:
+A rota externa é uma lista de permissão, definida no `map $args $ows_destino` do nginx. Aceita `GET` e `HEAD` em `/geoserver/ows`, com um único `service=wms|wfs|wcs`, e não deve ser trocada por bloqueios pontuais, porque há outros caminhos até um mapa:
 
 - `service=WFS&mode=map` devolve PNG, porque os modos CGI ignoram o `SERVICE`.
 - `POST` com formulário entrega WMS e mapas, e o nginx não inspeciona o corpo. Por isso, o mapa `$ows_post` só libera `POST` com `Content-Type` XML e sem query string, sempre para o MapServer, que não atende WMS nem desenha mapas a partir de XML. Isso cobre WFS por `POST`. O WMS não aceita `POST`.
 - `%73ervice=WMS` passa, porque só o MapServer decodifica nomes de parâmetro.
-- Caminhos como `/mapserver/DEFAULT/ogcapi` abrem a API OGC.
+- Caminhos como `/geoserver/DEFAULT/ogcapi` abrem a API OGC.
 
 Por isso, a rota externa também recusa `mode`, `SERVICE` repetido e nomes com `%`. O mapfile é fixado na própria rota (`set $args "map=DEFAULT&$args"`), e o cliente não pode enviar `map=`. Isso prende a rota a um mapfile: para servir outro, é preciso mudar a rota. A porta 8081 não tem esse filtro e não é publicada no compose: não a publique.
 
@@ -109,7 +109,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout nginx/certs/privkey.p
 - Só o WMS é exposto. WMTS, TMS, KML e `/demo` seguem ativos no `mapproxy.yaml`, mas sem rota no nginx.
 - Como é o único WMS externo, a fonte usa `wms_opts` para repassar `GetFeatureInfo` e `GetLegendGraphic` ao MapServer.
 - `featureinfo_types` precisa acompanhar o `wms_getfeatureinfo_formatlist` do mapfile. O MapProxy anuncia a lista sem consultar a fonte, e `xml` vira `text/xml` na 1.3.0, que o MapServer recusa. O QGIS trata `text/xml` e `application/json` como saída "feature", e `application/vnd.ogc.gml` não pode ser anunciado na 1.3.0, embora o pedido funcione.
-- `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. Por isso, a fonte passa pela porta interna do nginx (`http://nginx:8081/mapserver?...`), a única com WMS.
+- `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. Por isso, a fonte passa pela porta interna do nginx (`http://nginx:8081/geoserver?...`), a única com WMS.
 - O serviço só lê o YAML ao iniciar: depois de editar, use `docker compose restart mapproxy`.
 - `mapproxy/data/seed.yaml` limita o seed à cobertura `brasil`, o mesmo `EXTENT` de `mapserver/default.map`. Até o nível 10 são 24.864 tiles, contra 1.398.080 do mundo inteiro. Para conferir antes de rodar, use `mapproxy-seed --dry-run`.
 
