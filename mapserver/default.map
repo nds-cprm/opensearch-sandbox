@@ -15,21 +15,27 @@ MAP
     METADATA
       "wms_title"            "Meu Servidor de Mapas WMS"
       "wms_abstract"         "Serviço de mapas dinâmico rodando em Docker e FastCGI."
-      "wms_onlineresource"   "http://localhost/mapserver?MAP=default&" # URL base do serviço
+      "wms_onlineresource"   "http://nginx:8081/mapserver?MAP=default&" # fonte interna: o WMS externo é o do MapProxy
       "wms_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
       "wms_enable_request"   "*"                               # Permite GetCapabilities, GetMap, etc.
+      "wms_getfeatureinfo_formatlist" "application/json,text/html" # o MapProxy anuncia estes; ver featureinfo_types
 
       "wfs_title"            "Meu Servidor de Feições WFS"
       "wfs_abstract"         "Serviço de feições rodando em Docker e FastCGI."
       "wfs_onlineresource"   "https://localhost/mapserver/ows?" # mesmo host de PUBLIC_HOST no .env; o nginx fixa o mapfile
       "wfs_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
       "wfs_enable_request"   "*"                               # Permite GetCapabilities, GetFeature, etc.
+      "wfs_getfeature_formatlist" "application/json"           # no WEB para sair no GetCapabilities
 
       "wcs_label"            "Meu Servidor de Coberturas WCS"
       "wcs_description"      "Serviço de coberturas rodando em Docker e FastCGI."
       "wcs_onlineresource"   "https://localhost/mapserver/ows?" # mesmo host de PUBLIC_HOST no .env
       "wcs_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
       "wcs_enable_request"   "*"                               # Permite GetCapabilities, GetCoverage, etc.
+
+      # WFS e WCS repetem estes dois no GetCapabilities; sem eles, saem com href=""
+      "ows_service_onlineresource" "https://localhost/mapserver/ows?"
+      "ows_contactonlineresource"  "https://localhost/mapserver/ows?"
     END
   END
 
@@ -41,6 +47,22 @@ MAP
     EXTENSION "tif"
   END
 
+  # o nome é o próprio MIME: as listas *_formatlist comparam o pedido com o NAME
+  OUTPUTFORMAT
+    NAME "application/json"
+    DRIVER "OGR/GEOJSON"
+    MIMETYPE "application/json"
+    FORMATOPTION "STORAGE=stream"
+    FORMATOPTION "FORM=SIMPLE"
+  END
+
+  OUTPUTFORMAT
+    NAME "text/html"
+    DRIVER "TEMPLATE"
+    MIMETYPE "text/html; charset=UTF-8"
+    FORMATOPTION "FILE=templates/gfi.html"
+  END
+
   PROJECTION
     "init=epsg:4326"
   END
@@ -50,7 +72,7 @@ MAP
   # -----------------------------------------------------------------
   LAYER
     NAME "poligonos_opensearch"
-    TEMPLATE "empty" 
+    TEMPLATE "empty"
 
     METADATA
       "wms_title"         "OpenSearch teste"
@@ -60,6 +82,8 @@ MAP
       "wfs_title"          "OpenSearch teste"
       "wfs_abstract"       "Camada de teste para acesso no OpenSearch"
       "wfs_enable_request" "*"
+      # o WEB libera o WCS para o mapa todo, e esta camada não é uma cobertura
+      "wcs_enable_request" "!*"
       "gml_include_items"  "all"
       "gml_featureid"      "properties.fid"
       "gml_exclude_items"  "_id,id,type"

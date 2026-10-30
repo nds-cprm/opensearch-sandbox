@@ -1,0 +1,21 @@
+<!-- MapServer Template -->
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Unidades litoestratigráficas</title></head>
+<body>
+[resultset layer="poligonos_opensearch"]
+[feature]
+<table border="1" cellpadding="3">
+<caption>[item name="properties.sigla"]: [item name="properties.nome"]</caption>
+<tr><th>Hierarquia</th><td>[item name="properties.hierarquia"]</td></tr>
+<tr><th>Legenda</th><td>[item name="properties.legenda"]</td></tr>
+<tr><th>Litotipos</th><td>[item name="properties.litotipos"]</td></tr>
+<tr><th>Idade</th><td>[item name="properties.range"]</td></tr>
+<tr><th>Ambiente tectônico</th><td>[item name="properties.amb_tecto"]</td></tr>
+<tr><th>Escala</th><td>[item name="properties.escala"]</td></tr>
+<tr><th>Identificador</th><td>[item name="properties.fid"]</td></tr>
+</table>
+[/feature]
+[/resultset]
+</body>
+</html>

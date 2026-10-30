@@ -92,7 +92,7 @@ Por isso, a rota externa também recusa `mode`, `SERVICE` repetido e nomes com `
 ### HTTPS
 
 - O certificado fica em `nginx/certs/` (`fullchain.pem` e `privkey.pem`), fora do git e montado somente leitura. Sem esses arquivos, o nginx não inicia. O container roda com UID 101, que precisa conseguir ler a chave. Depois de renovar, use `docker compose restart nginx`.
-- O nome público está em dois lugares: `PUBLIC_HOST` no `.env`, usado pelo pygeoapi, e `wfs_onlineresource` e `wcs_onlineresource` em `mapserver/default.map`, que não lê variáveis de ambiente. Todos precisam coincidir, ou os clientes recebem URLs erradas. Só o MapProxy monta a URL a partir do pedido.
+- O nome público está em dois lugares: `PUBLIC_HOST` no `.env`, usado pelo pygeoapi, e `wfs_onlineresource`, `wcs_onlineresource`, `ows_service_onlineresource` e `ows_contactonlineresource` em `mapserver/default.map`, que não lê variáveis de ambiente. Todos precisam coincidir, ou os clientes recebem URLs erradas. Só o MapProxy monta a URL a partir do pedido.
 - Depois de mudar `PUBLIC_HOST`, recrie o pygeoapi com `docker compose up -d pygeoapi`, porque o OpenAPI é gerado na subida.
 - Para desenvolvimento, gere um certificado autoassinado:
 
@@ -108,6 +108,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout nginx/certs/privkey.p
 - `mapproxy/cache/` guarda os tiles em layout `tms`, em `<cache>/<camada>/<grade>`.
 - Só o WMS é exposto. WMTS, TMS, KML e `/demo` seguem ativos no `mapproxy.yaml`, mas sem rota no nginx.
 - Como é o único WMS externo, a fonte usa `wms_opts` para repassar `GetFeatureInfo` e `GetLegendGraphic` ao MapServer.
+- `featureinfo_types` precisa acompanhar o `wms_getfeatureinfo_formatlist` do mapfile. O MapProxy anuncia a lista sem consultar a fonte, e `xml` vira `text/xml` na 1.3.0, que o MapServer recusa. O QGIS trata `text/xml` e `application/json` como saída "feature", e `application/vnd.ogc.gml` não pode ser anunciado na 1.3.0, embora o pedido funcione.
 - `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. Por isso, a fonte passa pela porta interna do nginx (`http://nginx:8081/mapserver?...`), a única com WMS.
 - O serviço só lê o YAML ao iniciar: depois de editar, use `docker compose restart mapproxy`.
 - `mapproxy/data/seed.yaml` limita o seed à cobertura `brasil`, o mesmo `EXTENT` de `mapserver/default.map`. Até o nível 10 são 24.864 tiles, contra 1.398.080 do mundo inteiro. Para conferir antes de rodar, use `mapproxy-seed --dry-run`.
@@ -128,6 +129,9 @@ O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir 
 - Campo novo precisa de `gml_properties.<campo>_alias` (WFS) e `wms_properties.<campo>_alias` (WMS). `ows_*` não vale para o WFS.
 - `gml_exclude_items` e `wms_exclude_items` escondem `_id`, `id` e `type`.
 - Requisições com filtro são recortadas pelo `EXTENT` do mapfile, que precisa cobrir todos os dados. Sem isso, as contagens ficam menores, sem erro.
+- GeoJSON sai com `OUTPUTFORMAT=application/json`. As listas `*_formatlist` comparam o pedido com o `NAME` da saída, por isso o nome é o próprio MIME. O `wfs_getfeature_formatlist` fica no `WEB`: na camada, o formato funciona, mas não é anunciado no `GetCapabilities`. O identificador sai só na propriedade `fid`, sem `id` na feição.
+
+O `GetFeatureInfo` entrega `text/plain`, `text/html` e `application/json`. O HTML vem de `mapserver/templates/gfi.html`, pela saída `text/html` (driver `TEMPLATE`), e `wms_feature_info_mime_type` não tem efeito nesta versão. Esse template lista só os campos principais: campo novo não aparece nele sozinho.
 
 ### WCS no MapServer
 
@@ -141,7 +145,8 @@ curl -fsSL -o mapserver/data/bluemarble.tif \
 
 - Camada raster nova precisa de `"wms_enable_request" "!*"` e `"wfs_enable_request" "!*"`. O MapProxy pede o mapa inteiro (`CONEXAO_OPENSEARCH`), e sem isso a imagem entra nos tiles.
 - `MAXSIZE` limita a saída do WCS. Está em 5400, a largura do `bluemarble`, contra o padrão de 4096. Cobertura maior exige aumentar esse valor.
-- `wcs_formats` só controla o que é anunciado: `FORMAT=PNG` também responde.
+- O MapServer não tem chave que restrinja a saída do WCS: `wcs_formats` só controla o que é anunciado. Por isso, o `$ows_destino` recusa em `GET` qualquer `format=` que não seja GeoTIFF. Em `POST` XML, `image/png` ainda responde, porque o nginx não lê o corpo.
+- Camada vetorial precisa de `"wcs_enable_request" "!*"`, porque o `WEB` libera o WCS para o mapa todo. Sem isso, o `GetCoverage` responde com uma página HTML de erro, em vez de exceção OGC.
 
 ### Regra temporária
 
