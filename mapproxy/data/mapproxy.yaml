@@ -37,7 +37,7 @@ services:
       abstract: This is a minimal MapProxy example.
     srs: ['EPSG:3857', 'EPSG:4326', 'EPSG:4674']
     # o padrão inclui xml, que na 1.3.0 vira text/xml, recusado pelo MapServer
-    featureinfo_types: [text, html, json]
+    featureinfo_types: [text, json]
 
 layers:
   - name: litoestratigrafia

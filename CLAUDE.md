@@ -131,7 +131,9 @@ O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir 
 - Requisições com filtro são recortadas pelo `EXTENT` do mapfile, que precisa cobrir todos os dados. Sem isso, as contagens ficam menores, sem erro.
 - GeoJSON sai com `OUTPUTFORMAT=application/json`. As listas `*_formatlist` comparam o pedido com o `NAME` da saída, por isso o nome é o próprio MIME. O `wfs_getfeature_formatlist` fica no `WEB`: na camada, o formato funciona, mas não é anunciado no `GetCapabilities`. O identificador sai só na propriedade `fid`, sem `id` na feição.
 
-O `GetFeatureInfo` entrega `text/plain`, `text/html` e `application/json`. O HTML vem de `mapserver/templates/gfi.html`, pela saída `text/html` (driver `TEMPLATE`), e `wms_feature_info_mime_type` não tem efeito nesta versão. Esse template lista só os campos principais: campo novo não aparece nele sozinho.
+O `GetFeatureInfo` entrega `text/plain` e `application/json`. O HTML foi removido de propósito: os templates do MapServer não percorrem colunas, e cada camada exigiria o próprio template.
+
+O GeoJSON aceita uma camada por resposta. Com duas camadas do MapServer no mesmo pedido e resultado nas duas, o JSON sai truncado e o MapProxy responde 500. O texto não tem esse limite. Ao publicar outra camada, crie uma fonte por camada no `mapproxy.yaml`, com `layers:` apontando para a camada, e não para `CONEXAO_OPENSEARCH`.
 
 ### WCS no MapServer
 
