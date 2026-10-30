@@ -19,7 +19,7 @@ import urllib.request
 # mesmo bbox de pygeoapi/local.config.yml
 OESTE, SUL, LESTE, NORTE = -73.9872, -33.7684, -28.6341, 5.2843
 
-# nomes usados por mapserver/teste.map e pygeoapi/local.config.yml
+# nomes usados por mapserver/default.map e pygeoapi/local.config.yml
 INDICE = 'litoestratigrafia_1m_20260728_192458'
 ALIAS = 'litoestratigrafia_1m'
 

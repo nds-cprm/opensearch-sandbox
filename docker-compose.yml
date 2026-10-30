@@ -98,7 +98,7 @@ services:
       - ./pygeoapi/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
     environment:
       SCRIPT_NAME: /ogcapi
-      PYGEOAPI_SERVER_URL: http://localhost/ogcapi
+      PYGEOAPI_SERVER_URL: https://${PUBLIC_HOST}/ogcapi
       PYGEOAPI_CONFIG: /run/pygeoapi/config.yml
     env_file:
       - .env
@@ -147,10 +147,12 @@ services:
     image: docker.io/nginxinc/nginx-unprivileged:1.31-trixie
     ports:
       - "80:8080"
+      - "443:8443"
       - "9200:9200"
     restart: always
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/certs:/etc/nginx/certs:ro
     # o nginx sobe por último, porque não inicia sem resolver os upstreams. Só
     # service_started em pygeoapi: ele fica healthy depois de gerar o OpenAPI, o
     # que passa pelo nginx (por isso ele também não pode depender do nginx)

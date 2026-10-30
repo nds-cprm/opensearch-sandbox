@@ -2,6 +2,8 @@ MAP
   NAME "CONEXAO_OPENSEARCH"
   STATUS ON
   SIZE 800 600
+  # acima do padrão de 4096, para o WCS entregar o bluemarble inteiro
+  MAXSIZE 5400
   # filtros do WFS são recortados por este EXTENT: ele precisa cobrir todos os dados
   EXTENT -75 -35 -28 6
   UNITS DD
@@ -13,16 +15,30 @@ MAP
     METADATA
       "wms_title"            "Meu Servidor de Mapas WMS"
       "wms_abstract"         "Serviço de mapas dinâmico rodando em Docker e FastCGI."
-      "wms_onlineresource"   "http://localhost/mapserver?MAP=teste&" # URL base do serviço
+      "wms_onlineresource"   "http://localhost/mapserver?MAP=default&" # URL base do serviço
       "wms_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
       "wms_enable_request"   "*"                               # Permite GetCapabilities, GetMap, etc.
 
       "wfs_title"            "Meu Servidor de Feições WFS"
       "wfs_abstract"         "Serviço de feições rodando em Docker e FastCGI."
-      "wfs_onlineresource"   "http://localhost/mapserver?MAP=teste&" # map= é obrigatório neste servidor
+      "wfs_onlineresource"   "https://localhost/mapserver/ows?" # mesmo host de PUBLIC_HOST no .env; o nginx fixa o mapfile
       "wfs_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
       "wfs_enable_request"   "*"                               # Permite GetCapabilities, GetFeature, etc.
+
+      "wcs_label"            "Meu Servidor de Coberturas WCS"
+      "wcs_description"      "Serviço de coberturas rodando em Docker e FastCGI."
+      "wcs_onlineresource"   "https://localhost/mapserver/ows?" # mesmo host de PUBLIC_HOST no .env
+      "wcs_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
+      "wcs_enable_request"   "*"                               # Permite GetCapabilities, GetCoverage, etc.
     END
+  END
+
+  OUTPUTFORMAT
+    NAME "GEOTIFF"
+    DRIVER "GDAL/GTiff"
+    MIMETYPE "image/tiff"
+    IMAGEMODE BYTE
+    EXTENSION "tif"
   END
 
   PROJECTION
@@ -147,6 +163,35 @@ MAP
         OUTLINECOLOR 0 0 150           # Cor da borda (Azul Escuro)
         WIDTH 1.5                      # Espessura da borda
       END
+    END
+  END
+
+  # -----------------------------------------------------------------
+  # Cobertura de exemplo para o WCS (mapserver/data fica fora do git)
+  # -----------------------------------------------------------------
+  LAYER
+    NAME "bluemarble"
+    TYPE RASTER
+    STATUS ON
+    DATA "bluemarble.tif"
+
+    PROJECTION
+      "init=epsg:4326"
+    END
+
+    METADATA
+      "wcs_label"          "Blue Marble"
+      "wcs_description"    "NASA Blue Marble com topografia e batimetria, janeiro de 2004"
+      "wcs_enable_request" "*"
+      "wcs_extent"         "-180 -90 180 90"
+      "wcs_size"           "5400 2700"
+      "wcs_resolution"     "0.0666666667 0.0666666667"
+      "wcs_bandcount"      "3"
+      "wcs_formats"        "GEOTIFF"
+      "wcs_nativeformat"   "GEOTIFF"
+      # o MapProxy pede o mapa inteiro: sem isto, a imagem entraria nos tiles
+      "wms_enable_request" "!*"
+      "wfs_enable_request" "!*"
     END
   END
 END

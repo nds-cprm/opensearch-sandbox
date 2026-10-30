@@ -56,8 +56,12 @@ caches:
 sources:
   sgb_wms:
     type: wms
+    # repassa ao MapServer: este é o único WMS exposto aos clientes
+    wms_opts:
+      featureinfo: true
+      legendgraphic: true
     req:
-      url: "http://nginx:8080/mapserver?MAP=teste&"
+      url: "http://nginx:8081/mapserver?MAP=default&"
       layers: CONEXAO_OPENSEARCH
       # the layer only covers Brazil: keep the rest of the tiles transparent
       transparent: true

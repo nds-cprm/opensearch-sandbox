@@ -34,7 +34,7 @@ metadata:
         - api
         - OGC
     terms_of_service: https://creativecommons.org/licenses/by/4.0/
-    url: http://localhost:5000
+    url: ${PYGEOAPI_SERVER_URL}
   license:
     name: CC-BY 4.0 license
     url: https://creativecommons.org/licenses/by/4.0/
