@@ -2,7 +2,8 @@ MAP
   NAME "CONEXAO_OPENSEARCH"
   STATUS ON
   SIZE 800 600
-  EXTENT -70 -40 -30 10
+  # filtros do WFS são recortados por este EXTENT: ele precisa cobrir todos os dados
+  EXTENT -75 -35 -28 6
   UNITS DD
   SHAPEPATH "./data"
   IMAGECOLOR 255 255 255
@@ -12,9 +13,15 @@ MAP
     METADATA
       "wms_title"            "Meu Servidor de Mapas WMS"
       "wms_abstract"         "Serviço de mapas dinâmico rodando em Docker e FastCGI."
-      "wms_onlineresource"   "http://localhost/mapserver?" # URL base do serviço
+      "wms_onlineresource"   "http://localhost/mapserver?MAP=teste&" # URL base do serviço
       "wms_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
       "wms_enable_request"   "*"                               # Permite GetCapabilities, GetMap, etc.
+
+      "wfs_title"            "Meu Servidor de Feições WFS"
+      "wfs_abstract"         "Serviço de feições rodando em Docker e FastCGI."
+      "wfs_onlineresource"   "http://localhost/mapserver?MAP=teste&" # map= é obrigatório neste servidor
+      "wfs_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
+      "wfs_enable_request"   "*"                               # Permite GetCapabilities, GetFeature, etc.
     END
   END
 
@@ -34,7 +41,67 @@ MAP
       "wms_abstract"      "Camada de teste para acesso no OpenSearch"
       "wms_enable_request" "*"
       "wms_include_items"  "all"
+      "wfs_title"          "OpenSearch teste"
+      "wfs_abstract"       "Camada de teste para acesso no OpenSearch"
+      "wfs_enable_request" "*"
       "gml_include_items"  "all"
+      "gml_featureid"      "properties.fid"
+      "gml_exclude_items"  "_id,id,type"
+      "wms_exclude_items"  "_id,id,type"
+      "gml_types"          "auto"
+      # WFS lê gml_*, WMS lê wms_*
+      "gml_properties.fid_alias" "fid"
+      "wms_properties.fid_alias" "fid"
+      "gml_properties.id_uni_estratigrafica_alias" "id_uni_estratigrafica"
+      "wms_properties.id_uni_estratigrafica_alias" "id_uni_estratigrafica"
+      "gml_properties.sigla_alias" "sigla"
+      "wms_properties.sigla_alias" "sigla"
+      "gml_properties.hierarquia_alias" "hierarquia"
+      "wms_properties.hierarquia_alias" "hierarquia"
+      "gml_properties.nome_alias" "nome"
+      "wms_properties.nome_alias" "nome"
+      "gml_properties.amb_tecto_alias" "amb_tecto"
+      "wms_properties.amb_tecto_alias" "amb_tecto"
+      "gml_properties.sub_amb_tectonico_alias" "sub_amb_tectonico"
+      "wms_properties.sub_amb_tectonico_alias" "sub_amb_tectonico"
+      "gml_properties.sigla_pai_alias" "sigla_pai"
+      "wms_properties.sigla_pai_alias" "sigla_pai"
+      "gml_properties.nome_pai_alias" "nome_pai"
+      "wms_properties.nome_pai_alias" "nome_pai"
+      "gml_properties.legenda_alias" "legenda"
+      "wms_properties.legenda_alias" "legenda"
+      "gml_properties.escala_alias" "escala"
+      "wms_properties.escala_alias" "escala"
+      "gml_properties.mapa_alias" "mapa"
+      "wms_properties.mapa_alias" "mapa"
+      "gml_properties.litotipos_alias" "litotipos"
+      "wms_properties.litotipos_alias" "litotipos"
+      "gml_properties.range_alias" "range"
+      "wms_properties.range_alias" "range"
+      "gml_properties.idade_min_alias" "idade_min"
+      "wms_properties.idade_min_alias" "idade_min"
+      "gml_properties.idade_max_alias" "idade_max"
+      "wms_properties.idade_max_alias" "idade_max"
+      "gml_properties.eon_min_alias" "eon_min"
+      "wms_properties.eon_min_alias" "eon_min"
+      "gml_properties.eon_max_alias" "eon_max"
+      "wms_properties.eon_max_alias" "eon_max"
+      "gml_properties.era_min_alias" "era_min"
+      "wms_properties.era_min_alias" "era_min"
+      "gml_properties.era_max_alias" "era_max"
+      "wms_properties.era_max_alias" "era_max"
+      "gml_properties.sistema_min_alias" "sistema_min"
+      "wms_properties.sistema_min_alias" "sistema_min"
+      "gml_properties.sistema_max_alias" "sistema_max"
+      "wms_properties.sistema_max_alias" "sistema_max"
+      "gml_properties.epoca_min_alias" "epoca_min"
+      "wms_properties.epoca_min_alias" "epoca_min"
+      "gml_properties.epoca_max_alias" "epoca_max"
+      "wms_properties.epoca_max_alias" "epoca_max"
+      "gml_properties.siglas_historicas_alias" "siglas_historicas"
+      "wms_properties.siglas_historicas_alias" "siglas_historicas"
+      "gml_properties.grupo_alias" "grupo"
+      "wms_properties.grupo_alias" "grupo"
     END
 
     TYPE POLYGON
@@ -48,8 +115,11 @@ MAP
     # CONNECTION "ES:http://opensearch-node1:9200"
     CONNECTION "ES:http://nginx:9200"   # O GDAL não suporta multiplas instâncias de OpenSearch
     
+    # O GDAL não abre alias pelo nome: o curinga é proposital. Este padrão casa
+    # com o alias litoestratigrafia_1m e não com os índices datados
     CONNECTIONOPTIONS
       "BATCH_SIZE" "2000"
+      "LAYER" "litoestratigrafia*_1m"
     END
     
     # Caso seu OpenSearch exija autenticação, envie via cabeçalho HTTP:
@@ -57,34 +127,10 @@ MAP
 
     # Especifica qual campo/propriedade possui a geometria (ex: geo_point ou geo_shape)
     # DATA "litoestratigrafia_1m_20260728_192458"
-    DATA "SELECT properties.fid AS fid, 
-                 properties.id_uni_estratigrafica AS id_uni_estratigrafica,
-                 properties.sigla AS sigla,
-                 properties.hierarquia AS hierarquia,
-                 properties.nome AS nome, 
-                 properties.amb_tecto AS amb_tecto,
-                 properties.sub_amb_tectonico AS sub_amb_tectonico,
-                 properties.sigla_pai AS sigla_pai,
-                 properties.nome_pai AS nome_pai,
-                 properties.legenda AS legenda, 
-                 properties.escala AS escala,
-                 properties.mapa AS mapa,
-                 properties.litotipos AS litotipos,
-                 properties.range AS range,
-                 properties.idade_min AS idade_min,
-                 properties.idade_max AS idade_max,
-                 properties.eon_min AS eon_min,
-                 properties.eon_max AS eon_max,
-                 properties.era_min AS era_min,
-                 properties.era_max AS era_max,
-                 properties.sistema_min AS sistema_min,
-                 properties.sistema_max AS sistema_max,
-                 properties.epoca_min AS epoca_min,
-                 properties.epoca_max AS epoca_max,
-                 properties.siglas_historicas AS siglas_historicas,
-                 properties.grupo AS grupo,
-                 geometry 
-            FROM litoestratigrafia_1m_20260728_192458"
+    # Camada direta, sem SELECT: o MapServer anexa os filtros do WFS como WHERE ao
+    # SQL, e o OGR não aceita ali os aliases do SELECT. Os campos properties.* são
+    # renomeados pelos metadados *_alias da camada
+    DATA "litoestratigrafia*_1m"
 
     
 

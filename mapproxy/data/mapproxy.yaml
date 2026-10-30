@@ -35,26 +35,41 @@ services:
     md:
       title: MapProxy WMS Proxy
       abstract: This is a minimal MapProxy example.
+    srs: ['EPSG:3857', 'EPSG:4326', 'EPSG:4674']
 
 layers:
-  - name: osm
-    title: OSM
-    sources: [osm_cache]
+  - name: litoestratigrafia
+    title: Unidades Litoestratigráficas 1:1.000.000 (SGB)
+    sources: [litoestratigrafia_cache]
 
 caches:
-  osm_cache:
+  litoestratigrafia_cache:
     grids: [webmercator]
-    sources: [osm_wms]
+    sources: [sgb_wms]
+    # served by nginx straight from disk: one grid per cache, tms layout
+    # (<z>/<x>/<y>, the same as the WMTS URL) in <cache dir>/<layer>/<grid>
+    cache:
+      type: file
+      directory_layout: tms
+      directory: ${MAPPROXY_CACHE_DIR}/litoestratigrafia/webmercator
 
 sources:
-  osm_wms:
+  sgb_wms:
     type: wms
     req:
-      url: http://example.org/service?
-      layers: osm
+      url: "http://localhost/mapserver?MAP=teste&"
+      layers: CONEXAO_OPENSEARCH
+      # the layer only covers Brazil: keep the rest of the tiles transparent
+      transparent: true
 
 grids:
-    webmercator:
-        base: GLOBAL_WEBMERCATOR
+  webmercator:
+    base: GLOBAL_WEBMERCATOR
 
 globals:
+  cache:
+    # tiles go to CouchDB; this directory only holds the tile locks
+    base_dir: ${MAPPROXY_CACHE_DIR}
+  tiles:
+    # Cache-Control/Expires headers on tiles (browsers, CDNs, nginx cache)
+    expires_hours: 24

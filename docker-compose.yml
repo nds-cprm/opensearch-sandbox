@@ -75,11 +75,12 @@ services:
   pygeoapi:
     image: docker.io/ndscprm/pygeoapi:0.24.0
     volumes:
-      - ./pygeoapi/local.config.yml:/pygeoapi/local.config.yml:ro
+      - ./pygeoapi/local.config.yml:/etc/pygeoapi/config.yml:ro
       - ./pygeoapi/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
     environment:
       SCRIPT_NAME: /ogcapi
       PYGEOAPI_SERVER_URL: http://localhost/ogcapi
+      PYGEOAPI_CONFIG: /etc/pygeoapi/config.yml
     env_file:
       - .env
     restart: unless-stopped
@@ -95,8 +96,11 @@ services:
     # ports:
     #   - "8080:8080"
     volumes:
-      - ./mapproxy:/mapproxy
+      - ./mapproxy/data:/var/lib/mapproxy/config:ro
+      - ./mapproxy/cache:/var/lib/mapproxy/cache
     restart: unless-stopped
+    environment:
+      MAPPROXY_CACHE_DIR: /var/lib/mapproxy/cache
 
   mapserver:
     image: docker.io/ndscprm/mapserver:8.6.6

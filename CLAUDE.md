@@ -34,14 +34,23 @@ curl -s 'http://localhost:9200/_cat/indices?v'
 curl -s 'http://localhost/mapserver?map=TESTE&SERVICE=WMS&REQUEST=GetCapabilities'
 ```
 
+Massa de teste (dados fictícios, usa só a biblioteca padrão do Python):
+
+```bash
+python3 dados/gerar_massa.py                            # 500 documentos
+python3 dados/gerar_massa.py --registros 5000 --recriar # apaga o índice e recarrega
+```
+
+O script cria `litoestratigrafia_1m_20260728_192458` (lido pelo MapServer) com o alias `litoestratigrafia_1m` (lido pelo pygeoapi). O índice fica nos volumes `opensearch-data*`. Documentos precisam seguir o formato GeoJSON (`type`, `geometry`, `properties.*`), com `geometry` como `geo_shape` e textos com subcampo `.raw`, usado pelo pygeoapi para ordenar.
+
 ## Arquitetura
 
 O nginx é a entrada única. A porta 80 do host vai para o `:8080` do nginx, e a 9200 do host para o `:9200` do nginx. Os nós OpenSearch não publicam a 9200; o `9600` do node1 (Performance Analyzer) e o `5601` do Dashboards são os únicos acessos diretos.
 
 | Rota | Upstream | Protocolo |
 | --- | --- | --- |
-| `/ogcapi/` | `pygeoapi:8000` | uwsgi |
-| `/mapproxy/` | `mapproxy:8000` | uwsgi |
+| `/ogcapi` | `pygeoapi:8000` | uwsgi |
+| `/mapproxy` | `mapproxy:8000` | uwsgi |
 | `/mapserver` | `mapserver:8080` | FastCGI |
 | `:9200/` | `opensearch-node1` e `opensearch-node2` | HTTP |
 
@@ -54,6 +63,8 @@ Pontos que atravessam vários arquivos:
 - **Segurança desativada.** `DISABLE_SECURITY_PLUGIN=true` deixa o cluster em HTTP sem autenticação, embora as credenciais ainda apareçam na URL do pygeoapi e em `dashboards/opensearch_dashboards.yml`. Nesse arquivo, `opensearch.hosts` aponta para `https://localhost:9200`, mas o valor efetivo vem de `OPENSEARCH_HOSTS` no compose.
 - **Imagens pré-construídas.** MapServer, MapProxy e pygeoapi usam imagens `docker.io/ndscprm/*`, e os Dockerfiles locais foram removidos. Comentários como `conf/uwsgi.conf of the image` e `examples/` se referem ao repositório dessas imagens, não a este.
 - **Timeouts acoplados.** O `harakiri` de 60 s do uWSGI anda junto com `uwsgi_read_timeout 65s` no nginx. Ao mudar um, mude o outro. O MapServer não tem timeout próprio e depende de `fastcgi_read_timeout 60s`.
+- **Configuração do pygeoapi.** O serviço lê `PYGEOAPI_CONFIG`, e `pygeoapi/local.config.yml` é montado nesse caminho (`/etc/pygeoapi/config.yml`). Sem isso, vale o exemplo da imagem, com `resources: {}`. O uWSGI só lê `pygeoapi/uwsgi.conf` ao iniciar: depois de editá-lo, reinicie o serviço.
+- **Prefixo do MapProxy.** O `uwsgi.conf` da imagem não tem `mount` nem `manage-script-name`, então quem remove `/mapproxy` é o `location` do nginx, definindo `SCRIPT_NAME` e `PATH_INFO` depois de `include uwsgi_params`. A ordem importa: o último `PATH_INFO` vence.
 - **Porta real do pygeoapi.** O `server.bind.port` da configuração não define onde o serviço escuta. Com `pygeoapi/uwsgi.conf`, a porta vem de `PYGEOAPI_LISTEN_PORT` (8000 por padrão na imagem), usando o protocolo uwsgi, não HTTP.
 - **Prefixo do pygeoapi.** `/ogcapi` aparece em `SCRIPT_NAME` e `PYGEOAPI_SERVER_URL` no compose, em `mount` no `uwsgi.conf` e no `uwsgi_param` do nginx. Mudanças de prefixo precisam tocar os três.
 
@@ -70,11 +81,19 @@ Pontos que atravessam vários arquivos:
 
 Os nomes estão fixos nos arquivos e não coincidem entre si:
 
-- `mapserver/teste.map`: `litoestratigrafia_1m_20260728_192458`, nas cláusulas `DATA`/`FROM`
+- `mapserver/teste.map`: alias `litoestratigrafia_1m`, pelo curinga `litoestratigrafia*_1m`
 - `mapproxy/teste.xml`: `litoestratigrafia_1m_20260727_222038`
 - `pygeoapi/local.config.yml`: `litoestratigrafia_1m`, sem timestamp
 
-O SQL de `teste.map` projeta os campos `properties.*` com aliases, pois os documentos seguem a estrutura GeoJSON. Ao mudar o índice, atualize a query inteira.
+O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir o alias, use `litoestratigrafia*_1m` em `CONNECTIONOPTIONS "LAYER"` e no `DATA`. Esse padrão casa com o alias e não com os índices datados. Já `litoestratigrafia_1m*` soma todos os índices datados e duplica feições.
+
+### WFS e filtros no MapServer
+
+`teste.map` usa a camada direta no `DATA`, sem `SELECT`. O MapServer anexa filtros de atributo como `WHERE` ao SQL do `DATA`, e o OGR não aceita ali aliases do `SELECT`, o que quebra `FILTER` e `FEATUREID`. Por isso, os campos chegam como `properties.*` e são renomeados por metadados da camada:
+
+- Campo novo precisa de `gml_properties.<campo>_alias` (WFS) e `wms_properties.<campo>_alias` (WMS). `ows_*` não vale para o WFS.
+- `gml_exclude_items` e `wms_exclude_items` escondem `_id`, `id` e `type`.
+- Requisições com filtro são recortadas pelo `EXTENT` do mapfile, que precisa cobrir todos os dados. Sem isso, as contagens ficam menores, sem erro.
 
 ### Regra temporária
 
@@ -82,12 +101,9 @@ O `location` de `/_mapping/properties` no nginx existe só para o GeoServer e es
 
 ## Problemas conhecidos (verificado em 2026-10-30)
 
-Com a stack em execução, os nós estavam `green`, e o `GetCapabilities` do MapServer respondeu 200. O restante estava assim:
+Com a stack em execução, os nós estavam `green`, o MapServer respondeu ao `GetMap` e o pygeoapi serviu a coleção `opensearch_demo`, ambos com dados carregados por `dados/gerar_massa.py`. O restante estava assim:
 
-- **Sem dados:** nenhum índice `litoestratigrafia*` existe no cluster, apenas índices de sistema e `top_queries-*`.
-- **pygeoapi, rotas:** `/ogcapi/` retornava 404 porque o uWSGI em execução subiu antes da edição de `pygeoapi/uwsgi.conf` e não tinha o mount `/ogcapi`, logo `PATH_INFO` chegava ao Flask com o prefixo. O uWSGI só lê o arquivo ao iniciar: use `docker compose restart pygeoapi`. Testado em instância temporária com o arquivo atual: responde 200.
-- **pygeoapi, configuração:** a imagem lê `PYGEOAPI_CONFIG=/etc/pygeoapi/config.yml`, que vem com `resources: {}`, mas o compose monta `pygeoapi/local.config.yml` em `/pygeoapi/local.config.yml`. Por isso a coleção `opensearch_demo` não existe no serviço. Testado com `PYGEOAPI_CONFIG` apontando para o arquivo montado: a coleção aparece, e `/items` retorna 500 até o índice `litoestratigrafia_1m` existir.
-- **MapProxy, rotas:** tudo em `/mapproxy/...` retorna 404 porque o `uwsgi.conf` da imagem não tem `mount` nem `manage-script-name`, e o nginx envia `PATH_INFO` com o prefixo. A correção é no `location` do nginx: capturar o caminho por regex e definir `SCRIPT_NAME` e `PATH_INFO` depois de `include uwsgi_params` (a ordem importa: o último `PATH_INFO` vence). Testado em nginx descartável: `/demo/`, WMS e WMTS respondem 200.
+- **pygeoapi, inicialização:** o serviço gera o OpenAPI ao subir e, se o OpenSearch ainda não responde, registra `ProviderConnectionError` e tenta de novo. Foram 6 falhas antes de concluir. A mensagem grava a URL de `local.config.yml` com a senha em texto puro. Como a segurança está desativada, as credenciais na URL não são necessárias.
 - **MapProxy, configuração:** o `app.py` da imagem lê `$HOME/mapproxy.yaml`, ou seja, `/var/lib/mapproxy/config/mapproxy.yaml`, mas o compose monta `./mapproxy` em `/mapproxy`. Sem arquivo em `$HOME`, o entrypoint gera um exemplo a cada subida, com `${server}` e `$layer` sem valor. Editar `mapproxy/mapproxy.yaml` não altera o serviço em execução. O destino da montagem deve ser `/var/lib/mapproxy/config`.
 - **MapProxy, fonte:** `mapproxy/mapproxy.yaml` e `seed.yaml` ainda são os exemplos padrão, com fonte em `example.org` em vez do MapServer. Como `mapserver:8080` fala FastCGI e não HTTP, a fonte precisa passar pelo nginx: `http://nginx:8080/mapserver?map=TESTE`, camada `poligonos_opensearch`.
 - **Mapnik:** `mapproxy/test_mapnik.py` não roda na imagem atual, que não tem o módulo `mapnik`. Ele também depende de `/mapproxy/teste.vrt`, que não existe no repositório.
