@@ -64,7 +64,7 @@ Pontos que atravessam vários arquivos:
 - **Imagens pré-construídas.** MapServer, MapProxy e pygeoapi usam imagens `docker.io/ndscprm/*`, e os Dockerfiles locais foram removidos. Comentários como `conf/uwsgi.conf of the image` e `examples/` se referem ao repositório dessas imagens, não a este.
 - **Timeouts acoplados.** O `harakiri` de 60 s do uWSGI anda junto com `uwsgi_read_timeout 65s` no nginx. Ao mudar um, mude o outro. O MapServer não tem timeout próprio e depende de `fastcgi_read_timeout 60s`.
 - **Configuração do pygeoapi.** O serviço lê `PYGEOAPI_CONFIG`, e `pygeoapi/local.config.yml` é montado nesse caminho (`/etc/pygeoapi/config.yml`). Sem isso, vale o exemplo da imagem, com `resources: {}`. O uWSGI só lê `pygeoapi/uwsgi.conf` ao iniciar: depois de editá-lo, reinicie o serviço.
-- **Prefixo do MapProxy.** O `uwsgi.conf` da imagem não tem `mount` nem `manage-script-name`, então quem remove `/mapproxy` é o `location` do nginx, definindo `SCRIPT_NAME` e `PATH_INFO` depois de `include uwsgi_params`. A ordem importa: o último `PATH_INFO` vence.
+- **Prefixo do MapProxy.** `mapproxy/uwsgi.conf` não tem `mount`, então quem remove `/mapproxy` é o `location` do nginx, definindo `SCRIPT_NAME` e `PATH_INFO` depois de `include uwsgi_params`. A ordem importa: o último `PATH_INFO` vence.
 - **Porta real do pygeoapi.** O `server.bind.port` da configuração não define onde o serviço escuta. Com `pygeoapi/uwsgi.conf`, a porta vem de `PYGEOAPI_LISTEN_PORT` (8000 por padrão na imagem), usando o protocolo uwsgi, não HTTP.
 - **Prefixo do pygeoapi.** `/ogcapi` aparece em `SCRIPT_NAME` e `PYGEOAPI_SERVER_URL` no compose, em `mount` no `uwsgi.conf` e no `uwsgi_param` do nginx. Mudanças de prefixo precisam tocar os três.
 
@@ -75,14 +75,20 @@ Pontos que atravessam vários arquivos:
 - Mapfiles são chamados pelo alias da seção `MAPS` (`map=TESTE`). Mapfile novo precisa ser adicionado ali.
 - Também é possível usar o caminho, desde que case com `MS_MAP_PATTERN` (`^/var/lib/mapserver/`).
 - Sem `map=`, a requisição falha de propósito (`MS_MAPFILE ""`).
-- `wms_onlineresource` em `teste.map` não inclui `map=TESTE`.
+
+### MapProxy
+
+- `mapproxy/data/` é montado somente leitura em `/var/lib/mapproxy/config`, que é o `$HOME` lido pelo `app.py` da imagem. Sem `mapproxy.yaml` ali, o entrypoint gera um exemplo.
+- `mapproxy/cache/` guarda os tiles em layout `tms`, em `<cache>/<camada>/<grade>`, o mesmo do bloco de cache do nginx, hoje comentado.
+- `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. A fonte precisa usar `http://nginx:8080/mapserver?map=TESTE&`.
+- `mapproxy/tests/` não é montado no container.
 
 ### Nomes de índice
 
 Os nomes estão fixos nos arquivos e não coincidem entre si:
 
 - `mapserver/teste.map`: alias `litoestratigrafia_1m`, pelo curinga `litoestratigrafia*_1m`
-- `mapproxy/teste.xml`: `litoestratigrafia_1m_20260727_222038`
+- `mapproxy/tests/teste.xml`: `litoestratigrafia_1m_20260727_222038`
 - `pygeoapi/local.config.yml`: `litoestratigrafia_1m`, sem timestamp
 
 O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir o alias, use `litoestratigrafia*_1m` em `CONNECTIONOPTIONS "LAYER"` e no `DATA`. Esse padrão casa com o alias e não com os índices datados. Já `litoestratigrafia_1m*` soma todos os índices datados e duplica feições.
@@ -104,7 +110,10 @@ O `location` de `/_mapping/properties` no nginx existe só para o GeoServer e es
 Com a stack em execução, os nós estavam `green`, o MapServer respondeu ao `GetMap` e o pygeoapi serviu a coleção `opensearch_demo`, ambos com dados carregados por `dados/gerar_massa.py`. O restante estava assim:
 
 - **pygeoapi, inicialização:** o serviço gera o OpenAPI ao subir e, se o OpenSearch ainda não responde, registra `ProviderConnectionError` e tenta de novo. Foram 6 falhas antes de concluir. A mensagem grava a URL de `local.config.yml` com a senha em texto puro. Como a segurança está desativada, as credenciais na URL não são necessárias.
-- **MapProxy, configuração:** o `app.py` da imagem lê `$HOME/mapproxy.yaml`, ou seja, `/var/lib/mapproxy/config/mapproxy.yaml`, mas o compose monta `./mapproxy` em `/mapproxy`. Sem arquivo em `$HOME`, o entrypoint gera um exemplo a cada subida, com `${server}` e `$layer` sem valor. Editar `mapproxy/mapproxy.yaml` não altera o serviço em execução. O destino da montagem deve ser `/var/lib/mapproxy/config`.
-- **MapProxy, fonte:** `mapproxy/mapproxy.yaml` e `seed.yaml` ainda são os exemplos padrão, com fonte em `example.org` em vez do MapServer. Como `mapserver:8080` fala FastCGI e não HTTP, a fonte precisa passar pelo nginx: `http://nginx:8080/mapserver?map=TESTE`, camada `poligonos_opensearch`.
-- **Mapnik:** `mapproxy/test_mapnik.py` não roda na imagem atual, que não tem o módulo `mapnik`. Ele também depende de `/mapproxy/teste.vrt`, que não existe no repositório.
-- **Dashboards:** `/api/status` retorna 503. O log mostra a migração de saved objects parada, aguardando o índice `.kibana_1`.
+- **MapProxy, fonte:** todo tile retorna 500, porque a fonte em `mapproxy/data/mapproxy.yaml` usa `http://localhost/mapserver`, e a conexão é recusada dentro do container. Testado em cópia temporária com `http://nginx:8080/mapserver?map=TESTE&`: tiles e WMTS respondem 200 e são gravados em cache.
+- **MapProxy, seed:** `mapproxy/data/seed.yaml` ainda referencia `osm_cache`, que não existe. A cache atual é `litoestratigrafia_cache`.
+- **MapProxy, `.gitignore`:** ignora `mapproxy/cache/readme`, o único arquivo daquela pasta. Em um clone limpo ela não existe, e o Docker tende a criá-la como root, sem escrita para o UID 1000 do container.
+- **Mapnik:** `mapproxy/tests/test_mapnik.py` não roda na imagem atual, que não tem o módulo `mapnik`. Ele também depende de caminhos em `/mapproxy` e de `teste.vrt`, que não existem.
+- **Dashboards:** `/api/status` retorna 503. A migração de saved objects está parada: `.kibana_1` existe, com 0 documentos, sem o alias `.kibana`.
+- **Performance Analyzer:** a porta 9600 não responde, nem de dentro do container. A causa não foi identificada.
+- **nginx, 404:** `error_page 404 /404.html` aponta para um arquivo que não existe. O cliente recebe 404, mas cada caso gera uma linha de erro no log.
