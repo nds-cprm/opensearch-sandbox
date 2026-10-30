@@ -73,23 +73,25 @@ services:
       - opensearch-node2
 
   pygeoapi:
-    image: ndscprm/pygeoapi:0.23.5-test
-    build:
-      context: pygeoapi/
-    # ports:
-    #   - "5000:80"
+    image: docker.io/ndscprm/pygeoapi:0.24.0
     volumes:
-      - ./pygeoapi/local.config.yml:/pygeoapi/local.config.yml
+      - ./pygeoapi/local.config.yml:/pygeoapi/local.config.yml:ro
+      - ./pygeoapi/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
     environment:
       SCRIPT_NAME: /ogcapi
       PYGEOAPI_SERVER_URL: http://localhost/ogcapi
     env_file:
       - .env
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
   
   mapproxy:
-    image: kartoza/mapproxy:latest
-    container_name: mapproxy
+    image: docker.io/ndscprm/mapproxy:7.0.0
     # ports:
     #   - "8080:8080"
     volumes:
@@ -97,18 +99,16 @@ services:
     restart: unless-stopped
 
   mapserver:
-    image: ndscprm/mapserver:testing-ubuntu
-    build:
-      context: mapserver
+    image: docker.io/ndscprm/mapserver:8.6.6
     volumes:
-      - ./mapserver/maps:/maps 
+      - ./mapserver:/var/lib/mapserver:ro
     environment:
       # Variável opcional para apontar o arquivo de configuração global do MapServer
-      MAPSERVER_CONFIG_FILE: /maps/mapserver.conf 
+      MAPSERVER_CONFIG_FILE: /var/lib/mapserver/mapserver.conf 
     restart: unless-stopped
 
   nginx:
-    image: nginxinc/nginx-unprivileged:1.31-trixie
+    image: docker.io/nginxinc/nginx-unprivileged:1.31-trixie
     ports:
       - "80:8080"
       - "9200:9200"
