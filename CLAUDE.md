@@ -60,7 +60,8 @@ Pontos que atravessam vários arquivos:
 
 - **MapServer e pygeoapi acessam o OpenSearch por `nginx:9200`, não pelos nós.** O GDAL não aceita múltiplos hosts, então o balanceamento fica no upstream `opensearch-cluster`. A mesma porta tem `proxy_buffering off` e timeouts de 300 s para geometrias pesadas.
 - **Modo de compatibilidade ES 7.x.** O driver ES do GDAL exige `compatibility.override_main_response_version=true`, definido no compose para os dois nós. Por isso `GET /` responde `7.10.2`, e não a versão real do OpenSearch. As instruções do README com `https` e `-u admin` valem para um cluster com segurança ativa, que não é o caso daqui.
-- **Segurança desativada.** `DISABLE_SECURITY_PLUGIN=true` deixa o cluster em HTTP sem autenticação, embora as credenciais ainda apareçam na URL do pygeoapi e em `dashboards/opensearch_dashboards.yml`. Nesse arquivo, `opensearch.hosts` aponta para `https://localhost:9200`, mas o valor efetivo vem de `OPENSEARCH_HOSTS` no compose.
+- **Segurança desativada.** `DISABLE_SECURITY_PLUGIN=true` deixa o cluster em HTTP sem autenticação, embora as credenciais ainda apareçam na URL do pygeoapi e em `dashboards/opensearch_dashboards.yml`. O valor efetivo de `opensearch.hosts` vem de `OPENSEARCH_HOSTS` no compose.
+- **Dashboards sem plugin de segurança.** `DISABLE_SECURITY_DASHBOARDS_PLUGIN=true` remove o plugin, que senão exige login sem existir backend para isso. Com a variável, o `opensearch_dashboards.yml` não pode ter chaves `opensearch_security*`. O entrypoint tenta reescrever esse arquivo: por isso a montagem é `:ro`, e um erro de escrita na linha 192 do entrypoint no log é esperado.
 - **Imagens pré-construídas.** MapServer, MapProxy e pygeoapi usam imagens `docker.io/ndscprm/*`, e os Dockerfiles locais foram removidos. Comentários como `conf/uwsgi.conf of the image` e `examples/` se referem ao repositório dessas imagens, não a este.
 - **Ordem de subida.** Primeiro os nós OpenSearch, com healthcheck de `_cluster/health`; depois os serviços; por último o nginx, que não inicia sem resolver os upstreams. O pygeoapi não pode depender do nginx, porque isso cria um ciclo, e o nginx usa `service_started` para ele: o pygeoapi só fica `healthy` depois de gerar o OpenAPI, o que passa pelo nginx. Trocar para `service_healthy` trava a subida.
 - **Timeouts acoplados.** O `harakiri` de 60 s do uWSGI anda junto com `uwsgi_read_timeout 65s` no nginx. Ao mudar um, mude o outro. O MapServer não tem timeout próprio e depende de `fastcgi_read_timeout 60s`.
@@ -106,8 +107,6 @@ O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir 
 
 O `location` de `/_mapping/properties` no nginx existe só para o GeoServer e está marcado como "Excluir depois".
 
-## Problemas conhecidos (verificado em 2026-10-30)
+## Estado atual (verificado em 2026-10-30)
 
-Com a stack em execução, os nós estavam `green`, e o MapServer, o pygeoapi e o MapProxy serviram os dados carregados por `dados/gerar_massa.py`. O restante estava assim:
-
-- **Dashboards:** `/api/status` retorna 503. A migração de saved objects está parada: `.kibana_1` existe, com 0 documentos, sem o alias `.kibana`.
+Com a stack em execução, os nós estavam `green`, e o MapServer, o pygeoapi, o MapProxy e o Dashboards responderam com os dados carregados por `dados/gerar_massa.py`. A stack roda em 2.19.6. Ainda não houve teste com o ArcGIS nem com a versão 2.12.0.
