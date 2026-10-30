@@ -45,7 +45,7 @@ O script cria `litoestratigrafia_1m_20260728_192458` (lido pelo MapServer) com o
 
 ## Arquitetura
 
-O nginx é a entrada única. A porta 80 do host vai para o `:8080` do nginx, e a 9200 do host para o `:9200` do nginx. Os nós OpenSearch não publicam a 9200; o `9600` do node1 (Performance Analyzer) e o `5601` do Dashboards são os únicos acessos diretos.
+O nginx é a entrada única. A porta 80 do host vai para o `:8080` do nginx, e a 9200 do host para o `:9200` do nginx. Os nós OpenSearch não publicam portas, e o `5601` do Dashboards é o único acesso direto. A porta 9600 do Performance Analyzer está comentada no compose, porque não respondia.
 
 | Rota | Upstream | Protocolo |
 | --- | --- | --- |
@@ -62,8 +62,9 @@ Pontos que atravessam vários arquivos:
 - **Modo de compatibilidade ES 7.x.** O driver ES do GDAL exige `compatibility.override_main_response_version=true`, definido no compose para os dois nós. Por isso `GET /` responde `7.10.2`, e não a versão real do OpenSearch. As instruções do README com `https` e `-u admin` valem para um cluster com segurança ativa, que não é o caso daqui.
 - **Segurança desativada.** `DISABLE_SECURITY_PLUGIN=true` deixa o cluster em HTTP sem autenticação, embora as credenciais ainda apareçam na URL do pygeoapi e em `dashboards/opensearch_dashboards.yml`. Nesse arquivo, `opensearch.hosts` aponta para `https://localhost:9200`, mas o valor efetivo vem de `OPENSEARCH_HOSTS` no compose.
 - **Imagens pré-construídas.** MapServer, MapProxy e pygeoapi usam imagens `docker.io/ndscprm/*`, e os Dockerfiles locais foram removidos. Comentários como `conf/uwsgi.conf of the image` e `examples/` se referem ao repositório dessas imagens, não a este.
+- **Ordem de subida.** Primeiro os nós OpenSearch, com healthcheck de `_cluster/health`; depois os serviços; por último o nginx, que não inicia sem resolver os upstreams. O pygeoapi não pode depender do nginx, porque isso cria um ciclo, e o nginx usa `service_started` para ele: o pygeoapi só fica `healthy` depois de gerar o OpenAPI, o que passa pelo nginx. Trocar para `service_healthy` trava a subida.
 - **Timeouts acoplados.** O `harakiri` de 60 s do uWSGI anda junto com `uwsgi_read_timeout 65s` no nginx. Ao mudar um, mude o outro. O MapServer não tem timeout próprio e depende de `fastcgi_read_timeout 60s`.
-- **Configuração do pygeoapi.** O serviço lê `PYGEOAPI_CONFIG`, e `pygeoapi/local.config.yml` é montado nesse caminho (`/etc/pygeoapi/config.yml`). Sem isso, vale o exemplo da imagem, com `resources: {}`. O uWSGI só lê `pygeoapi/uwsgi.conf` ao iniciar: depois de editá-lo, reinicie o serviço.
+- **Configuração do pygeoapi.** O serviço lê `PYGEOAPI_CONFIG`, e `pygeoapi/local.config.yml` é montado nesse caminho (`/run/pygeoapi/config.yml`). Sem a variável, a imagem lê `/etc/pygeoapi/config.yml`, um exemplo com `resources: {}`. O uWSGI só lê `pygeoapi/uwsgi.conf` ao iniciar: depois de editá-lo, reinicie o serviço.
 - **Prefixo do MapProxy.** `mapproxy/uwsgi.conf` não tem `mount`, então quem remove `/mapproxy` é o `location` do nginx, definindo `SCRIPT_NAME` e `PATH_INFO` depois de `include uwsgi_params`. A ordem importa: o último `PATH_INFO` vence.
 - **Porta real do pygeoapi.** O `server.bind.port` da configuração não define onde o serviço escuta. Com `pygeoapi/uwsgi.conf`, a porta vem de `PYGEOAPI_LISTEN_PORT` (8000 por padrão na imagem), usando o protocolo uwsgi, não HTTP.
 - **Prefixo do pygeoapi.** `/ogcapi` aparece em `SCRIPT_NAME` e `PYGEOAPI_SERVER_URL` no compose, em `mount` no `uwsgi.conf` e no `uwsgi_param` do nginx. Mudanças de prefixo precisam tocar os três.
@@ -80,16 +81,16 @@ Pontos que atravessam vários arquivos:
 
 - `mapproxy/data/` é montado somente leitura em `/var/lib/mapproxy/config`, que é o `$HOME` lido pelo `app.py` da imagem. Sem `mapproxy.yaml` ali, o entrypoint gera um exemplo.
 - `mapproxy/cache/` guarda os tiles em layout `tms`, em `<cache>/<camada>/<grade>`, o mesmo do bloco de cache do nginx, hoje comentado.
-- `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. A fonte precisa usar `http://nginx:8080/mapserver?map=TESTE&`.
-- `mapproxy/tests/` não é montado no container.
+- `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. Por isso, a fonte passa pelo nginx (`http://nginx:8080/mapserver?...`).
+- O serviço só lê o YAML ao iniciar: depois de editar, use `docker compose restart mapproxy`.
+- `mapproxy/data/seed.yaml` limita o seed à cobertura `brasil`, o mesmo `EXTENT` de `mapserver/teste.map`. Até o nível 10 são 24.864 tiles, contra 1.398.080 do mundo inteiro. Para conferir antes de rodar, use `mapproxy-seed --dry-run`.
 
 ### Nomes de índice
 
-Os nomes estão fixos nos arquivos e não coincidem entre si:
+O MapServer e o pygeoapi leem o mesmo alias, `litoestratigrafia_1m`:
 
-- `mapserver/teste.map`: alias `litoestratigrafia_1m`, pelo curinga `litoestratigrafia*_1m`
-- `mapproxy/tests/teste.xml`: `litoestratigrafia_1m_20260727_222038`
-- `pygeoapi/local.config.yml`: `litoestratigrafia_1m`, sem timestamp
+- `mapserver/teste.map`: pelo curinga `litoestratigrafia*_1m`
+- `pygeoapi/local.config.yml`: pelo nome do alias
 
 O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir o alias, use `litoestratigrafia*_1m` em `CONNECTIONOPTIONS "LAYER"` e no `DATA`. Esse padrão casa com o alias e não com os índices datados. Já `litoestratigrafia_1m*` soma todos os índices datados e duplica feições.
 
@@ -107,13 +108,6 @@ O `location` de `/_mapping/properties` no nginx existe só para o GeoServer e es
 
 ## Problemas conhecidos (verificado em 2026-10-30)
 
-Com a stack em execução, os nós estavam `green`, o MapServer respondeu ao `GetMap` e o pygeoapi serviu a coleção `opensearch_demo`, ambos com dados carregados por `dados/gerar_massa.py`. O restante estava assim:
+Com a stack em execução, os nós estavam `green`, e o MapServer, o pygeoapi e o MapProxy serviram os dados carregados por `dados/gerar_massa.py`. O restante estava assim:
 
-- **pygeoapi, inicialização:** o serviço gera o OpenAPI ao subir e, se o OpenSearch ainda não responde, registra `ProviderConnectionError` e tenta de novo. Foram 6 falhas antes de concluir. A mensagem grava a URL de `local.config.yml` com a senha em texto puro. Como a segurança está desativada, as credenciais na URL não são necessárias.
-- **MapProxy, fonte:** todo tile retorna 500, porque a fonte em `mapproxy/data/mapproxy.yaml` usa `http://localhost/mapserver`, e a conexão é recusada dentro do container. Testado em cópia temporária com `http://nginx:8080/mapserver?map=TESTE&`: tiles e WMTS respondem 200 e são gravados em cache.
-- **MapProxy, seed:** `mapproxy/data/seed.yaml` ainda referencia `osm_cache`, que não existe. A cache atual é `litoestratigrafia_cache`.
-- **MapProxy, `.gitignore`:** ignora `mapproxy/cache/readme`, o único arquivo daquela pasta. Em um clone limpo ela não existe, e o Docker tende a criá-la como root, sem escrita para o UID 1000 do container.
-- **Mapnik:** `mapproxy/tests/test_mapnik.py` não roda na imagem atual, que não tem o módulo `mapnik`. Ele também depende de caminhos em `/mapproxy` e de `teste.vrt`, que não existem.
 - **Dashboards:** `/api/status` retorna 503. A migração de saved objects está parada: `.kibana_1` existe, com 0 documentos, sem o alias `.kibana`.
-- **Performance Analyzer:** a porta 9600 não responde, nem de dentro do container. A causa não foi identificada.
-- **nginx, 404:** `error_page 404 /404.html` aponta para um arquivo que não existe. O cliente recebe 404, mas cada caso gera uma linha de erro no log.

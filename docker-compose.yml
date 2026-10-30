@@ -22,10 +22,17 @@ services:
         hard: 65536
     volumes:
       - opensearch-data1:/usr/share/opensearch/data # Creates volume called opensearch-data1 and mounts it to the container
-    ports:
+    # ports:
       # - 9200:9200 # REST API
-      - 9600:9600 # Performance Analyzer
+      # - 9600:9600 # Performance Analyzer
     restart: always
+    healthcheck:
+      # só passa depois que o cluster elege o gerenciador
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      start_period: 60s
+      retries: 12
 
   opensearch-node2:
     image: opensearchproject/opensearch:${OPENSEARCH_VERSION}
@@ -51,6 +58,13 @@ services:
     volumes:
       - opensearch-data2:/usr/share/opensearch/data
     restart: always
+    healthcheck:
+      # só passa depois que o cluster elege o gerenciador
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      start_period: 60s
+      retries: 12
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:${OPENSEARCH_VERSION}
@@ -65,25 +79,35 @@ services:
       OPENSEARCH_SECURITY_ENABLED: false
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
       OPENSEARCH_SECURITY_COOKIE_SECURE: false
+      # sem isso, o plugin pede login mesmo com a segurança desativada no cluster
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
     volumes:
-      - ./dashboards/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
+      # :ro porque, com o plugin desativado, o entrypoint tenta reescrever este arquivo
+      - ./dashboards/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
     restart: always
     depends_on:
-      - opensearch-node1
-      - opensearch-node2
+      opensearch-node1:
+        condition: service_healthy
+      opensearch-node2:
+        condition: service_healthy
 
   pygeoapi:
     image: docker.io/ndscprm/pygeoapi:0.24.0
     volumes:
-      - ./pygeoapi/local.config.yml:/etc/pygeoapi/config.yml:ro
+      - ./pygeoapi/local.config.yml:/run/pygeoapi/config.yml:ro
       - ./pygeoapi/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
     environment:
       SCRIPT_NAME: /ogcapi
       PYGEOAPI_SERVER_URL: http://localhost/ogcapi
-      PYGEOAPI_CONFIG: /etc/pygeoapi/config.yml
+      PYGEOAPI_CONFIG: /run/pygeoapi/config.yml
     env_file:
       - .env
     restart: unless-stopped
+    depends_on:
+      opensearch-node1:
+        condition: service_healthy
+      opensearch-node2:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "healthcheck"]
       interval: 30s
@@ -102,6 +126,8 @@ services:
     restart: unless-stopped
     environment:
       MAPPROXY_CACHE_DIR: /var/lib/mapproxy/cache
+    depends_on:
+      - mapserver
 
   mapserver:
     image: docker.io/ndscprm/mapserver:8.6.6
@@ -111,6 +137,11 @@ services:
       # Variável opcional para apontar o arquivo de configuração global do MapServer
       MAPSERVER_CONFIG_FILE: /var/lib/mapserver/mapserver.conf 
     restart: unless-stopped
+    depends_on:
+      opensearch-node1:
+        condition: service_healthy
+      opensearch-node2:
+        condition: service_healthy
 
   nginx:
     image: docker.io/nginxinc/nginx-unprivileged:1.31-trixie
@@ -120,6 +151,20 @@ services:
     restart: always
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    # o nginx sobe por último, porque não inicia sem resolver os upstreams. Só
+    # service_started em pygeoapi: ele fica healthy depois de gerar o OpenAPI, o
+    # que passa pelo nginx (por isso ele também não pode depender do nginx)
+    depends_on:
+      opensearch-node1:
+        condition: service_healthy
+      opensearch-node2:
+        condition: service_healthy
+      pygeoapi:
+        condition: service_started
+      mapproxy:
+        condition: service_started
+      mapserver:
+        condition: service_started
 
 volumes:
   opensearch-data1:

@@ -57,7 +57,7 @@ sources:
   sgb_wms:
     type: wms
     req:
-      url: "http://localhost/mapserver?MAP=teste&"
+      url: "http://nginx:8080/mapserver?MAP=teste&"
       layers: CONEXAO_OPENSEARCH
       # the layer only covers Brazil: keep the rest of the tiles transparent
       transparent: true

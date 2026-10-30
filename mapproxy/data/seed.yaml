@@ -8,20 +8,24 @@
 
 seeds:
   myseed1:
-    caches: [osm_cache]
+    caches: [litoestratigrafia_cache]
     # grids: []
-    # coverages: []
+    coverages: [brasil]
     levels:
       to: 10
     refresh_before:
-      time: 2013-10-10T12:35:00
+      days: 7
 
 cleanups:
   myclean1:
-    caches: [osm_cache]
+    caches: [litoestratigrafia_cache]
     remove_before:
       days: 14
     levels:
         from: 11
 
 coverages:
+  # mesmo EXTENT de mapserver/teste.map
+  brasil:
+    bbox: [-75, -35, -28, 6]
+    srs: 'EPSG:4326'
