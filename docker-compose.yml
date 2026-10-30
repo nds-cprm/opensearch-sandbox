@@ -98,6 +98,7 @@ services:
     volumes:
       - ./mapproxy/data:/var/lib/mapproxy/config:ro
       - ./mapproxy/cache:/var/lib/mapproxy/cache
+      - ./mapproxy/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
     restart: unless-stopped
     environment:
       MAPPROXY_CACHE_DIR: /var/lib/mapproxy/cache
