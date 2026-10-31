@@ -267,7 +267,7 @@ MAP
     # String de conexão apontando para o endpoint e índice do OpenSearch
     # Sintaxe: Elasticsearch:http://host:porta/nome_do_indice
     # CONNECTION "ES:http://opensearch-node1:9200"
-    CONNECTION "ES:http://nginx:9200"   # O GDAL não suporta multiplas instâncias de OpenSearch
+    CONNECTION "ES:http://opensearch-proxy:9200"   # O GDAL não suporta multiplas instâncias de OpenSearch
     
     # O GDAL não abre alias pelo nome: o curinga é proposital. Este padrão casa
     # com o alias litoestratigrafia_1m e não com os índices datados

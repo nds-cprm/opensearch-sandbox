@@ -61,7 +61,7 @@ resources:
       - type: feature
         name: OpenSearch
         editable: false  # optional, default is false
-        data: http://admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD}@nginx:9200/litoestratigrafia_1m
+        data: http://admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD}@opensearch-proxy:9200/litoestratigrafia_1m
         id_field: fid
         crs:
           - http://www.opengis.net/def/crs/OGC/1.3/CRS84

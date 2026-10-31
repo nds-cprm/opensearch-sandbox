@@ -91,6 +91,27 @@ services:
       opensearch-node2:
         condition: service_healthy
 
+  # Proxy reverso do OpenSearch. Não chame este serviço de nginx: esse nome é o do
+  # nginx dos mapas
+  opensearch-proxy:
+    image: docker.io/nginxinc/nginx-unprivileged:1.31-trixie
+    ports:
+      - "9200:9200"
+    restart: always
+    volumes:
+      - ./nginx/opensearch-proxy.conf:/etc/nginx/conf.d/default.conf
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health' >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      start_period: 10s
+      retries: 6
+    depends_on:
+      opensearch-node1:
+        condition: service_healthy
+      opensearch-node2:
+        condition: service_healthy
+
   pygeoapi:
     image: docker.io/ndscprm/pygeoapi:0.24.0
     volumes:
@@ -104,9 +125,7 @@ services:
       - .env
     restart: unless-stopped
     depends_on:
-      opensearch-node1:
-        condition: service_healthy
-      opensearch-node2:
+      opensearch-proxy:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "healthcheck"]
@@ -138,9 +157,7 @@ services:
       MAPSERVER_CONFIG_FILE: /var/lib/mapserver/mapserver.conf 
     restart: unless-stopped
     depends_on:
-      opensearch-node1:
-        condition: service_healthy
-      opensearch-node2:
+      opensearch-proxy:
         condition: service_healthy
 
   nginx:
@@ -148,19 +165,13 @@ services:
     ports:
       - "80:8080"
       - "443:8443"
-      - "9200:9200"
     restart: always
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./nginx/certs:/etc/nginx/certs:ro
-    # o nginx sobe por último, porque não inicia sem resolver os upstreams. Só
-    # service_started em pygeoapi: ele fica healthy depois de gerar o OpenAPI, o
-    # que passa pelo nginx (por isso ele também não pode depender do nginx)
+    # Só service_started em pygeoapi: ele fica healthy depois de gerar o OpenAPI,
+    # o que depende do OpenSearch, e o WMS e o WFS não devem esperar por isso
     depends_on:
-      opensearch-node1:
-        condition: service_healthy
-      opensearch-node2:
-        condition: service_healthy
       pygeoapi:
         condition: service_started
       mapproxy:
