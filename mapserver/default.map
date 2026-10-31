@@ -15,15 +15,43 @@ MAP
 
   WEB
     METADATA
-      "wms_title"            "Meu Servidor de Mapas WMS"
-      "wms_abstract"         "Serviço de mapas dinâmico rodando em Docker e FastCGI."
+      # níveis com o pygeoapi; o primeiro idioma é o padrão, e as chaves .en valem para
+      # LANGUAGE=en (WFS) e ACCEPTLANGUAGES=en (WCS). O MapProxy não tem idiomas
+      "ows_languages"        "pt-BR,en"
+      "ows_contactperson"    "Mota, Carlos Eduardo"
+      "ows_contactposition"  "Pesquisador em Geociências"
+      "ows_contactposition.en" "Geoscience Researcher"
+      "ows_contactorganization" "Serviço Geológico do Brasil - SGB/CPRM"
+      "ows_contactorganization.en" "Geological Survey of Brazil - SGB/CPRM"
+      "ows_role"             "pointOfContact"
+      "ows_addresstype"      "postal"
+      "ows_address"          "Av Pasteur, 404, Urca"
+      "ows_address.en"       "404 Pasteur Ave, Urca"
+      "ows_city"             "Rio de Janeiro"
+      "ows_stateorprovince"  "Rio de Janeiro"
+      "ows_postcode"         "22290240"
+      "ows_country"          "Brasil"
+      "ows_country.en"       "Brazil"
+      "ows_contactvoicetelephone" "+55-21-2546-0320"
+      "ows_contactelectronicmailaddress" "carlos.mota@sgb.gov.br"
+      "ows_contactinstructions" "Durante o horário de expediente. Fora do horário, aos sábados e domingos, não há atendimento."
+      "ows_contactinstructions.en" "During hours of service. Off on weekends."
+      "ows_fees"             "none"
+      "ows_accessconstraints" "Licença CC-BY 4.0"
+      "ows_accessconstraints.en" "CC-BY 4.0 license"
+
+      "wms_title"            "Servidor WMS do SGB/CPRM"
+      "wms_abstract"         "Serviço de mapas para disponibilização de dados geológicos do Serviço Geológico do Brasil"
       "wms_onlineresource"   "http://nginx:8081/geoserver?MAP=default&" # fonte interna: o WMS externo é o do MapProxy
       "wms_srs"              "EPSG:4326 EPSG:3857 EPSG:900913 EPSG:4674"  # Projeções suportadas
       "wms_enable_request"   "*"                               # Permite GetCapabilities, GetMap, etc.
       "wms_getfeatureinfo_formatlist" "application/json,application/vnd.ogc.gml/3.1.1,text/xml; subtype=gml/3.1.1,text/xml" # ver featureinfo_types
 
-      "wfs_title"            "Meu Servidor de Feições WFS"
-      "wfs_abstract"         "Serviço de feições rodando em Docker e FastCGI."
+      "wfs_title"            "Servidor WFS do SGB/CPRM"
+      "wfs_title.en"         "SGB/CPRM WFS Server"
+      "wfs_abstract"         "Serviço de feições para disponibilização de dados geológicos do Serviço Geológico do Brasil"
+      "wfs_abstract.en"      "Feature service to serve geological data from Geological Survey of Brazil"
+      "wfs_keywordlist"      "geoespacial,dados,geologia,feições"
       "wfs_onlineresource"   "https://localhost/geoserver/ows?" # mesmo host de PUBLIC_HOST no .env; o nginx fixa o mapfile
       "wfs_srs"              "EPSG:4326 EPSG:4674"  # Projeções suportadas
       "wfs_enable_request"   "*"                               # Permite GetCapabilities, GetFeature, etc.
@@ -33,17 +61,22 @@ MAP
       "wfs_maxfeatures"      "5000"
       "wfs_maxfeatures_ignore_for_resulttype_hits" "true"
       "wfs_compute_number_matched" "true"
-      "wfs_getfeature_formatlist" "application/json,SHAPE-ZIP,KML,GPKG"           # no WEB para sair no GetCapabilities
+      "wfs_getfeature_formatlist" "json,SHAPE-ZIP,KML,GPKG,csv"           # no WEB para sair no GetCapabilities
 
-      "wcs_label"            "Meu Servidor de Coberturas WCS"
-      "wcs_description"      "Serviço de coberturas rodando em Docker e FastCGI."
+      "wcs_title"            "Servidor WCS do SGB/CPRM"
+      "wcs_title.en"         "SGB/CPRM WCS Server"
+      "wcs_abstract"         "Serviço de coberturas para disponibilização de dados geológicos do Serviço Geológico do Brasil"
+      "wcs_abstract.en"      "Coverage service to serve geological data from Geological Survey of Brazil"
+      "wcs_label"            "Servidor WCS do SGB/CPRM"
+      "wcs_description"      "Serviço de coberturas para disponibilização de dados geológicos do Serviço Geológico do Brasil"
+      "wcs_keywordlist"      "geoespacial,dados,geologia,coberturas"
       "wcs_onlineresource"   "https://localhost/geoserver/ows?" # mesmo host de PUBLIC_HOST no .env
       "wcs_srs"              "EPSG:4326 EPSG:4674"  # Projeções suportadas
       "wcs_enable_request"   "*"                               # Permite GetCapabilities, GetCoverage, etc.
 
       # WFS e WCS repetem estes dois no GetCapabilities; sem eles, saem com href=""
-      "ows_service_onlineresource" "https://localhost/geoserver/ows?"
-      "ows_contactonlineresource"  "https://localhost/geoserver/ows?"
+      "ows_service_onlineresource" "https://www.sgb.gov.br/"
+      "ows_contactonlineresource"  "https://www.sgb.gov.br/"
     END
   END
 
@@ -55,7 +88,7 @@ MAP
     EXTENSION "tif"
   END
 
-  # o nome é o próprio MIME: as listas *_formatlist comparam o pedido com o NAME
+  # GetFeatureInfo: o nome é o próprio MIME, porque a lista compara o pedido com o NAME
   OUTPUTFORMAT
     NAME "application/json"
     DRIVER "OGR/GEOJSON"
@@ -64,7 +97,16 @@ MAP
     FORMATOPTION "FORM=SIMPLE"
   END
 
-  # nomes usados pelo GeoServer substituído
+  # WFS: o pedido também casa pelo MIME, e o nome vira tag XML no WFS 1.0.0, que não
+  # aceita "/". Estes são nomes usados pelo GeoServer substituído
+  OUTPUTFORMAT
+    NAME "json"
+    DRIVER "OGR/GEOJSON"
+    MIMETYPE "application/json"
+    FORMATOPTION "STORAGE=stream"
+    FORMATOPTION "FORM=SIMPLE"
+  END
+
   OUTPUTFORMAT
     NAME "SHAPE-ZIP"
     DRIVER "OGR/ESRI Shapefile"
@@ -124,17 +166,16 @@ MAP
     FORMATOPTION "DSCO:FORMAT=GML3"
   END
 
-  # exige GDAL com -DOGR_ENABLE_DRIVER_CSV=ON, ausente da imagem atual. Ao ativar,
-  # acrescentar csv ao wfs_getfeature_formatlist
-  # OUTPUTFORMAT
-  #   NAME "csv"
-  #   DRIVER "OGR/CSV"
-  #   MIMETYPE "text/csv; charset=UTF-8"
-  #   FORMATOPTION "STORAGE=memory"
-  #   FORMATOPTION "FORM=simple"
-  #   FORMATOPTION "FILENAME=feicoes.csv"
-  #   FORMATOPTION "LCO:GEOMETRY=AS_WKT"
-  # END
+  # exige GDAL com -DOGR_ENABLE_DRIVER_CSV=ON
+  OUTPUTFORMAT
+    NAME "csv"
+    DRIVER "OGR/CSV"
+    MIMETYPE "text/csv"
+    FORMATOPTION "STORAGE=memory"
+    FORMATOPTION "FORM=simple"
+    FORMATOPTION "FILENAME=feicoes.csv"
+    FORMATOPTION "LCO:GEOMETRY=AS_WKT"
+  END
 
   PROJECTION
     "init=epsg:4326"
