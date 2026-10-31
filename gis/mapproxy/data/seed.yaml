@@ -25,7 +25,7 @@ cleanups:
         from: 11
 
 coverages:
-  # mesmo EXTENT de mapserver/default.map
+  # mesmo EXTENT de gis/mapserver/default.map
   brasil:
     bbox: [-75, -35, -28, 6]
     srs: 'EPSG:4326'

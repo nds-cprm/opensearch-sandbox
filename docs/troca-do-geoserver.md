@@ -78,7 +78,7 @@ Na stack, o WMS público é o do MapProxy, e o WFS e o WCS são os do MapServer.
 
 ### Metadados do OGC API
 
-Na stack, `pygeoapi/local.config.yml` ainda traz os textos de exemplo. O serviço atual serve de referência, por ser o único com textos em dois idiomas.
+Na stack, `gis/pygeoapi/local.config.yml` ainda traz os textos de exemplo. O serviço atual serve de referência, por ser o único com textos em dois idiomas.
 
 | Campo | Serviço atual | Esta stack |
 | --- | --- | --- |
@@ -94,9 +94,9 @@ Na stack, `pygeoapi/local.config.yml` ainda traz os textos de exemplo. O serviç
 
 | Serviço | Arquivo | Chaves |
 | --- | --- | --- |
-| WMS, e WMTS quando tiver rota | `mapproxy/data/mapproxy.yaml` | `services.wms.md`: `title`, `abstract`, `contact`, `fees`, `access_constraints`, `keyword_list` |
-| WFS e WCS | `mapserver/default.map` | `ows_*`, `wfs_*` e `wcs_*` no `METADATA` do `WEB`, com `.en` nas chaves em inglês |
-| OGC API | `pygeoapi/local.config.yml` | `metadata.identification`, `metadata.provider`, `metadata.contact` e `server.languages`, com textos por idioma |
+| WMS, e WMTS quando tiver rota | `gis/mapproxy/data/mapproxy.yaml` | `services.wms.md`: `title`, `abstract`, `contact`, `fees`, `access_constraints`, `keyword_list` |
+| WFS e WCS | `gis/mapserver/default.map` | `ows_*`, `wfs_*` e `wcs_*` no `METADATA` do `WEB`, com `.en` nas chaves em inglês |
+| OGC API | `gis/pygeoapi/local.config.yml` | `metadata.identification`, `metadata.provider`, `metadata.contact` e `server.languages`, com textos por idioma |
 
 ### Conferir antes de copiar
 
@@ -111,7 +111,7 @@ O GeoServer atual tem inconsistências que não valem a pena levar para a stack:
 
 ## Antes da virada
 
-- Trocar `PUBLIC_HOST` no `.env` e as duas chaves `wfs_onlineresource` e `wcs_onlineresource` em `mapserver/default.map` para `geoservicos.sgb.gov.br`, e instalar o certificado real.
+- Trocar `PUBLIC_HOST` no `.env` e as duas chaves `wfs_onlineresource` e `wcs_onlineresource` em `gis/mapserver/default.map` para `geoservicos.sgb.gov.br`, e instalar o certificado real.
 - Avisar quem usa o QGIS: depois de uma troca de formatos ou rotas, ele pode manter o `GetCapabilities` anterior por até 24 horas.
 
 ## Para outro momento: camadas

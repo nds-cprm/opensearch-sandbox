@@ -26,7 +26,7 @@ docker compose restart nginx                    # aplica mudanças no default.co
 docker compose restart opensearch-proxy         # aplica mudanças no opensearch-proxy.conf
 ```
 
-`nginx/default.conf` e `nginx/opensearch-proxy.conf` são montados como arquivo único. Editores que substituem o arquivo deixam o container com a versão antiga, por isso prefira `restart` a `nginx -s reload`.
+`gis/nginx/default.conf` e `opensearch/nginx/opensearch-proxy.conf` são montados como arquivo único. Editores que substituem o arquivo deixam o container com a versão antiga, por isso prefira `restart` a `nginx -s reload`.
 
 Verificações pela stack em execução:
 
@@ -40,15 +40,15 @@ curl -sk 'https://localhost/geoserver/ows?SERVICE=WMS&REQUEST=GetCapabilities'
 Massa de teste (dados fictícios, usa só a biblioteca padrão do Python):
 
 ```bash
-python3 dados/gerar_massa.py                            # 500 documentos
-python3 dados/gerar_massa.py --registros 5000 --recriar # apaga o índice e recarrega
+python3 opensearch/dados/gerar_massa.py                            # 500 documentos
+python3 opensearch/dados/gerar_massa.py --registros 5000 --recriar # apaga o índice e recarrega
 ```
 
 O script cria `litoestratigrafia_1m_20260728_192458` (lido pelo MapServer) com o alias `litoestratigrafia_1m` (lido pelo pygeoapi). O índice fica nos volumes `opensearch-data*`. Documentos precisam seguir o formato GeoJSON (`type`, `geometry`, `properties.*`), com `geometry` como `geo_shape` e textos com subcampo `.raw`, usado pelo pygeoapi para ordenar.
 
 ## Arquitetura
 
-São dois nginx. O `nginx` atende os mapas, com `nginx/default.conf`: a porta 443 do host vai para o `:8443`, com TLS, e a 80 vai para o `:8080`, que só redireciona para HTTPS. O `opensearch-proxy` é o proxy reverso do cluster, com `nginx/opensearch-proxy.conf`, e a 9200 do host vai para o `:9200` dele, em HTTP. O proxy não pode se chamar `nginx`, porque o MapProxy usa esse nome para chegar à porta 8081. Os nós OpenSearch não publicam portas, e o `5601` do Dashboards é o único acesso direto. A porta 9600 do Performance Analyzer está comentada no compose, porque não respondia.
+São dois nginx. O `nginx` atende os mapas, com `gis/nginx/default.conf`: a porta 443 do host vai para o `:8443`, com TLS, e a 80 vai para o `:8080`, que só redireciona para HTTPS. O `opensearch-proxy` é o proxy reverso do cluster, com `opensearch/nginx/opensearch-proxy.conf`, e a 9200 do host vai para o `:9200` dele, em HTTP. O proxy não pode se chamar `nginx`, porque o MapProxy usa esse nome para chegar à porta 8081. Os nós OpenSearch não publicam portas, e o `5601` do Dashboards é o único acesso direto. A porta 9600 do Performance Analyzer está comentada no compose, porque não respondia.
 
 | Rota | Upstream | Protocolo |
 | --- | --- | --- |
@@ -59,27 +59,31 @@ São dois nginx. O `nginx` atende os mapas, com `nginx/default.conf`: a porta 44
 | `:8081/geoserver` (interna, com WMS) | `mapserver:8080` | FastCGI |
 | `opensearch-proxy:9200/` | `opensearch-node1` e `opensearch-node2` | HTTP |
 
+`opensearch/` reúne o que é do OpenSearch: `dashboards/`, `nginx/` (o proxy), `dados/` (a massa de teste) e `server/`, que guarda arquivos a montar nos nós. `server/` ainda está vazia, por isso não existe num clone novo, e nenhum arquivo dela é montado no compose.
+
+`gis/` reúne `mapproxy/`, `mapserver/`, `pygeoapi/` e `nginx/`, o nginx dos mapas.
+
 Fluxo de dados: `MapProxy → nginx:8081 → MapServer → opensearch-proxy → OpenSearch`, e `pygeoapi → opensearch-proxy → OpenSearch` em paralelo. O ponto único para clientes externos é `/geoserver/ows`, que decide o destino pelo `SERVICE`. O contexto `/geoserver` é proposital, porque esta stack vai substituir `https://geoservicos.sgb.gov.br/geoserver` e `/ogcapi`, mas não há GeoServer aqui: quem responde é o MapServer ou o MapProxy. O que falta para a troca está em `docs/troca-do-geoserver.md`. Não há rota `/mapproxy`, e a API OGC fica em `/ogcapi`.
 
 Pontos que atravessam vários arquivos:
 
 - **MapServer e pygeoapi acessam o OpenSearch por `opensearch-proxy:9200`, não pelos nós.** O GDAL não aceita múltiplos hosts, então o balanceamento fica no upstream `opensearch-cluster`. A mesma porta tem `proxy_buffering off` e timeouts de 300 s para geometrias pesadas.
 - **Modo de compatibilidade ES 7.x.** O driver ES do GDAL exige `compatibility.override_main_response_version=true`, definido no compose para os dois nós. Por isso `GET /` responde `7.10.2`, e não a versão real do OpenSearch. As instruções do README com `https` e `-u admin` valem para um cluster com segurança ativa, que não é o caso daqui.
-- **Segurança desativada.** `DISABLE_SECURITY_PLUGIN=true` deixa o cluster em HTTP sem autenticação, embora as credenciais ainda apareçam na URL do pygeoapi e em `dashboards/opensearch_dashboards.yml`. O valor efetivo de `opensearch.hosts` vem de `OPENSEARCH_HOSTS` no compose.
+- **Segurança desativada.** `DISABLE_SECURITY_PLUGIN=true` deixa o cluster em HTTP sem autenticação, embora as credenciais ainda apareçam na URL do pygeoapi e em `opensearch/dashboards/opensearch_dashboards.yml`. O valor efetivo de `opensearch.hosts` vem de `OPENSEARCH_HOSTS` no compose.
 - **Dashboards sem plugin de segurança.** `DISABLE_SECURITY_DASHBOARDS_PLUGIN=true` remove o plugin, que senão exige login sem existir backend para isso. Com a variável, o `opensearch_dashboards.yml` não pode ter chaves `opensearch_security*`. O entrypoint tenta reescrever esse arquivo: por isso a montagem é `:ro`, e um erro de escrita na linha 192 do entrypoint no log é esperado.
 - **Imagens pré-construídas.** MapServer, MapProxy e pygeoapi usam imagens `docker.io/ndscprm/*`, e os Dockerfiles locais foram removidos. Comentários como `conf/uwsgi.conf of the image` e `examples/` se referem ao repositório dessas imagens, não a este.
 - **Ordem de subida.** Primeiro os nós OpenSearch, com healthcheck de `_cluster/health`; depois o `opensearch-proxy`, com o mesmo healthcheck; depois MapServer e pygeoapi, e por último o nginx dos mapas. O nginx usa `service_started` para o pygeoapi, que só fica `healthy` depois de gerar o OpenAPI: com `service_healthy`, o WMS e o WFS ficariam fora do ar sempre que o OpenSearch faltasse.
-- **Falha do OpenSearch.** O pygeoapi precisa do OpenSearch e do índice ao iniciar e, sem eles, reinicia em ciclo, com `/ogcapi` em 502. Num cluster vazio, isso dura até `dados/gerar_massa.py` criar o índice. Sem o `opensearch-proxy`, o WFS e o WCS `GetCapabilities`, o WCS `GetCoverage` e os tiles em cache seguem respondendo, e o `GetFeature` responde 400.
+- **Falha do OpenSearch.** O pygeoapi precisa do OpenSearch e do índice ao iniciar e, sem eles, reinicia em ciclo, com `/ogcapi` em 502. Num cluster vazio, isso dura até `opensearch/dados/gerar_massa.py` criar o índice. Sem o `opensearch-proxy`, o WFS e o WCS `GetCapabilities`, o WCS `GetCoverage` e os tiles em cache seguem respondendo, e o `GetFeature` responde 400.
 - **Upstreams resolvidos em tempo de execução.** Os dois nginx usam `resolver 127.0.0.11` e `server ... resolve`, com `zone`. Os IPs mudam quando um serviço reinicia, e sem isso o nginx continua no IP antigo, que pode já ser de outro serviço: o WMS chegou a cair no pygeoapi e a responder 404. Upstream novo precisa de `zone` e `resolve`. O custo aparece quando o nginx e o upstream reiniciam ao mesmo tempo, como num `restart` conjunto: o nome ainda não resolve, e a rota responde 502 por 25 a 40 s, até a nova tentativa. Reinicie o upstream antes, ou use `up`, que respeita o `depends_on`.
 - **Timeouts acoplados.** O `harakiri` de 60 s do uWSGI anda junto com `uwsgi_read_timeout 65s` no nginx. Ao mudar um, mude o outro. O MapServer não tem timeout próprio e depende de `fastcgi_read_timeout 60s`.
-- **Configuração do pygeoapi.** O serviço lê `PYGEOAPI_CONFIG`, e `pygeoapi/local.config.yml` é montado nesse caminho (`/run/pygeoapi/config.yml`). Sem a variável, a imagem lê `/etc/pygeoapi/config.yml`, um exemplo com `resources: {}`. O uWSGI só lê `pygeoapi/uwsgi.conf` ao iniciar: depois de editá-lo, reinicie o serviço.
+- **Configuração do pygeoapi.** O serviço lê `PYGEOAPI_CONFIG`, e `gis/pygeoapi/local.config.yml` é montado nesse caminho (`/run/pygeoapi/config.yml`). Sem a variável, a imagem lê `/etc/pygeoapi/config.yml`, um exemplo com `resources: {}`. O uWSGI só lê `gis/pygeoapi/uwsgi.conf` ao iniciar: depois de editá-lo, reinicie o serviço.
 - **URL anunciada pelo MapProxy.** O `location @ows_wms` envia `SCRIPT_NAME=/geoserver` e `PATH_INFO=/ows`, o despachante do MapProxy. É isso que faz o `GetCapabilities` anunciar `/geoserver/ows`. Os dois `uwsgi_param` precisam ficar depois de `include uwsgi_params`, porque o último `PATH_INFO` vence.
-- **Porta real do pygeoapi.** O `server.bind.port` da configuração não define onde o serviço escuta. Com `pygeoapi/uwsgi.conf`, a porta vem de `PYGEOAPI_LISTEN_PORT` (8000 por padrão na imagem), usando o protocolo uwsgi, não HTTP.
+- **Porta real do pygeoapi.** O `server.bind.port` da configuração não define onde o serviço escuta. Com `gis/pygeoapi/uwsgi.conf`, a porta vem de `PYGEOAPI_LISTEN_PORT` (8000 por padrão na imagem), usando o protocolo uwsgi, não HTTP.
 - **Prefixo do pygeoapi.** `/ogcapi` aparece em `SCRIPT_NAME` e `PYGEOAPI_SERVER_URL` no compose, em `mount` no `uwsgi.conf` e no `location` e no `uwsgi_param` do nginx. Mudanças de prefixo precisam tocar os três.
 
 ### MapServer
 
-`mapserver/` é montado somente leitura em `/var/lib/mapserver`, e a configuração global é `mapserver/mapserver.conf`:
+`gis/mapserver/` é montado somente leitura em `/var/lib/mapserver`, e a configuração global é `gis/mapserver/mapserver.conf`:
 
 - Mapfiles são chamados pelo alias da seção `MAPS` (`map=DEFAULT`). Mapfile novo precisa ser adicionado ali.
 - Também é possível usar o caminho, desde que case com `MS_MAP_PATTERN` (`^/var/lib/mapserver/`).
@@ -98,21 +102,21 @@ Por isso, a rota externa também recusa `mode`, `SERVICE` repetido e nomes com `
 
 ### HTTPS
 
-- O certificado fica em `nginx/certs/` (`fullchain.pem` e `privkey.pem`), fora do git e montado somente leitura. Sem esses arquivos, o nginx não inicia. O container roda com UID 101, que precisa conseguir ler a chave. Depois de renovar, use `docker compose restart nginx`.
-- O nome público está em dois lugares: `PUBLIC_HOST` no `.env`, usado pelo pygeoapi, e `wfs_onlineresource` e `wcs_onlineresource` em `mapserver/default.map`, que não lê variáveis de ambiente. Todos precisam coincidir, ou os clientes recebem URLs erradas. Só o MapProxy monta a URL a partir do pedido.
+- O certificado fica em `gis/nginx/certs/` (`fullchain.pem` e `privkey.pem`), fora do git e montado somente leitura. Sem esses arquivos, o nginx não inicia. O container roda com UID 101, que precisa conseguir ler a chave. Depois de renovar, use `docker compose restart nginx`.
+- O nome público está em dois lugares: `PUBLIC_HOST` no `.env`, usado pelo pygeoapi, e `wfs_onlineresource` e `wcs_onlineresource` em `gis/mapserver/default.map`, que não lê variáveis de ambiente. Todos precisam coincidir, ou os clientes recebem URLs erradas. Só o MapProxy monta a URL a partir do pedido.
 - Depois de mudar `PUBLIC_HOST`, recrie o pygeoapi com `docker compose up -d pygeoapi`, porque o OpenAPI é gerado na subida.
 - Para desenvolvimento, gere um certificado autoassinado:
 
 ```bash
-mkdir -p nginx/certs
-openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout nginx/certs/privkey.pem \
-  -out nginx/certs/fullchain.pem -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+mkdir -p gis/nginx/certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout gis/nginx/certs/privkey.pem \
+  -out gis/nginx/certs/fullchain.pem -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
 ```
 
 ### MapProxy
 
-- `mapproxy/data/` é montado somente leitura em `/var/lib/mapproxy/config`, que é o `$HOME` lido pelo `app.py` da imagem. Sem `mapproxy.yaml` ali, o entrypoint gera um exemplo.
-- `mapproxy/cache/` guarda os tiles em layout `tms`, em `<cache>/<grade>`: `litoestratigrafia/GLOBAL_WEBMERCATOR`, `GLOBAL_GEODETIC` e `GLOBAL_MERCATOR`. O cache usa `use_grid_names` e não pode usar `cache.directory`, que o MapProxy recusa com mais de uma grade.
+- `gis/mapproxy/data/` é montado somente leitura em `/var/lib/mapproxy/config`, que é o `$HOME` lido pelo `app.py` da imagem. Sem `mapproxy.yaml` ali, o entrypoint gera um exemplo.
+- `gis/mapproxy/cache/` guarda os tiles em layout `tms`, em `<cache>/<grade>`: `litoestratigrafia/GLOBAL_WEBMERCATOR`, `GLOBAL_GEODETIC` e `GLOBAL_MERCATOR`. O cache usa `use_grid_names` e não pode usar `cache.directory`, que o MapProxy recusa com mais de uma grade.
 - O WMTS ignora a `GLOBAL_GEODETIC`, que o MapProxy considera incompatível, e lista só as outras duas. O TMS e o WMS usam as três.
 - Só o WMS é exposto. WMTS, TMS, KML e `/demo` seguem ativos no `mapproxy.yaml`, mas sem rota no nginx.
 - Como é o único WMS externo, a fonte usa `wms_opts` para repassar `GetFeatureInfo` e `GetLegendGraphic` ao MapServer.
@@ -120,14 +124,14 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout nginx/certs/privkey.p
 - `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. Por isso, a fonte passa pela porta interna do nginx (`http://nginx:8081/geoserver?...`), a única com WMS.
 - `image_formats` deixa o TIFF de fora de propósito: o MapProxy grava o código EPSG em 16 bits, e `image/tiff` e `image/geotiff` falham em `EPSG:900913`.
 - O serviço só lê o YAML ao iniciar: depois de editar, use `docker compose restart mapproxy`.
-- `mapproxy/data/seed.yaml` limita o seed à cobertura `brasil`, o mesmo `EXTENT` de `mapserver/default.map`. Até o nível 10 são cerca de 73 mil tiles, somando as três grades. Para conferir antes de rodar, use `mapproxy-seed --dry-run`.
+- `gis/mapproxy/data/seed.yaml` limita o seed à cobertura `brasil`, o mesmo `EXTENT` de `gis/mapserver/default.map`. Até o nível 10 são cerca de 73 mil tiles, somando as três grades. Para conferir antes de rodar, use `mapproxy-seed --dry-run`.
 
 ### Nomes de índice
 
 O MapServer e o pygeoapi leem o mesmo alias, `litoestratigrafia_1m`:
 
-- `mapserver/default.map`: pelo curinga `litoestratigrafia*_1m`
-- `pygeoapi/local.config.yml`: pelo nome do alias
+- `gis/mapserver/default.map`: pelo curinga `litoestratigrafia*_1m`
+- `gis/pygeoapi/local.config.yml`: pelo nome do alias
 
 O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir o alias, use `litoestratigrafia*_1m` em `CONNECTIONOPTIONS "LAYER"` e no `DATA`. Esse padrão casa com o alias e não com os índices datados. Já `litoestratigrafia_1m*` soma todos os índices datados e duplica feições.
 
@@ -150,11 +154,11 @@ O GeoJSON aceita uma camada por resposta. Com duas camadas do MapServer no mesmo
 
 ### WCS no MapServer
 
-`default.map` publica a camada raster `bluemarble`, em `mapserver/data/bluemarble.tif`. A pasta `mapserver/data/` fica fora do git. Sem o arquivo, o WCS falha, e o WMS e o WFS seguem normais. Para baixar de novo:
+`default.map` publica a camada raster `bluemarble`, em `gis/mapserver/data/bluemarble.tif`. A pasta `gis/mapserver/data/` fica fora do git. Sem o arquivo, o WCS falha, e o WMS e o WFS seguem normais. Para baixar de novo:
 
 ```bash
-mkdir -p mapserver/data
-curl -fsSL -o mapserver/data/bluemarble.tif \
+mkdir -p gis/mapserver/data
+curl -fsSL -o gis/mapserver/data/bluemarble.tif \
   'https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-topography-bathymetry/january/world.topo.bathy.200401.3x5400x2700_geo.tif'
 ```
 
@@ -165,10 +169,10 @@ curl -fsSL -o mapserver/data/bluemarble.tif \
 
 ### Regra temporária
 
-O `location` de `/_mapping/properties` em `nginx/opensearch-proxy.conf` existe só para o GeoServer e está marcado como "Excluir depois".
+O `location` de `/_mapping/properties` em `opensearch/nginx/opensearch-proxy.conf` existe só para o GeoServer e está marcado como "Excluir depois".
 
 ## Estado atual (verificado em 2026-10-30)
 
-Com a stack em execução, os nós estavam `green`, e o MapServer, o pygeoapi, o MapProxy e o Dashboards responderam com os dados carregados por `dados/gerar_massa.py`. A stack roda em 2.19.7. O WCS entrega `bluemarble` nas versões 1.0.0, 1.1.1 e 2.0.1, por `GET` e `POST` em XML. Ainda não houve teste com o ArcGIS nem com a versão 2.12.0.
+Com a stack em execução, os nós estavam `green`, e o MapServer, o pygeoapi, o MapProxy e o Dashboards responderam com os dados carregados por `opensearch/dados/gerar_massa.py`. A stack roda em 2.19.7. O WCS entrega `bluemarble` nas versões 1.0.0, 1.1.1 e 2.0.1, por `GET` e `POST` em XML. Ainda não houve teste com o ArcGIS nem com a versão 2.12.0.
 
 A separação dos dois nginx foi testada em 2026-10-30 em projeto paralelo, com índice novo de 500 documentos e heap de 1 GB: serviços, porta 9200 pelo proxy, queda e volta do OpenSearch.

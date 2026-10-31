@@ -305,7 +305,7 @@ MAP
   END
 
   # -----------------------------------------------------------------
-  # Cobertura de exemplo para o WCS (mapserver/data fica fora do git)
+  # Cobertura de exemplo para o WCS (gis/mapserver/data fica fora do git)
   # -----------------------------------------------------------------
   LAYER
     NAME "bluemarble"

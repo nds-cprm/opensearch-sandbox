@@ -1,5 +1,5 @@
 **/*.log
 **/*.png
-mapproxy/cache/*
-mapserver/data/
-nginx/certs/
+gis/mapproxy/cache/*
+gis/mapserver/data/
+gis/nginx/certs/

@@ -83,7 +83,7 @@ services:
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
     volumes:
       # :ro porque, com o plugin desativado, o entrypoint tenta reescrever este arquivo
-      - ./dashboards/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
+      - ./opensearch/dashboards/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
     restart: always
     depends_on:
       opensearch-node1:
@@ -99,7 +99,7 @@ services:
       - "9200:9200"
     restart: always
     volumes:
-      - ./nginx/opensearch-proxy.conf:/etc/nginx/conf.d/default.conf
+      - ./opensearch/nginx/opensearch-proxy.conf:/etc/nginx/conf.d/default.conf
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health' >/dev/null"]
       interval: 10s
@@ -115,8 +115,8 @@ services:
   pygeoapi:
     image: docker.io/ndscprm/pygeoapi:0.24.0
     volumes:
-      - ./pygeoapi/local.config.yml:/run/pygeoapi/config.yml:ro
-      - ./pygeoapi/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
+      - ./gis/pygeoapi/local.config.yml:/run/pygeoapi/config.yml:ro
+      - ./gis/pygeoapi/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
     environment:
       SCRIPT_NAME: /ogcapi
       PYGEOAPI_SERVER_URL: https://${PUBLIC_HOST}/ogcapi
@@ -139,9 +139,9 @@ services:
     # ports:
     #   - "8080:8080"
     volumes:
-      - ./mapproxy/data:/var/lib/mapproxy/config:ro
-      - ./mapproxy/cache:/var/lib/mapproxy/cache
-      - ./mapproxy/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
+      - ./gis/mapproxy/data:/var/lib/mapproxy/config:ro
+      - ./gis/mapproxy/cache:/var/lib/mapproxy/cache
+      - ./gis/mapproxy/uwsgi.conf:/var/lib/uwsgi/uwsgi.conf:ro
     restart: unless-stopped
     environment:
       MAPPROXY_CACHE_DIR: /var/lib/mapproxy/cache
@@ -151,7 +151,7 @@ services:
   mapserver:
     image: docker.io/ndscprm/mapserver:8.6.6
     volumes:
-      - ./mapserver:/var/lib/mapserver:ro
+      - ./gis/mapserver:/var/lib/mapserver:ro
     environment:
       # Variável opcional para apontar o arquivo de configuração global do MapServer
       MAPSERVER_CONFIG_FILE: /var/lib/mapserver/mapserver.conf 
@@ -167,8 +167,8 @@ services:
       - "443:8443"
     restart: always
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./gis/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./gis/nginx/certs:/etc/nginx/certs:ro
     # Só service_started em pygeoapi: ele fica healthy depois de gerar o OpenAPI,
     # o que depende do OpenSearch, e o WMS e o WFS não devem esperar por isso
     depends_on:

@@ -5,8 +5,8 @@ Os dados são fictícios: a grade de polígonos cobre o bbox do Brasil, mas nome
 siglas e geometrias não representam nenhuma unidade real. Sementes iguais geram
 exatamente os mesmos documentos.
 
-    python3 dados/gerar_massa.py
-    python3 dados/gerar_massa.py --registros 5000 --recriar
+    python3 opensearch/dados/gerar_massa.py
+    python3 opensearch/dados/gerar_massa.py --registros 5000 --recriar
 """
 import argparse
 import json
@@ -16,10 +16,10 @@ import sys
 import urllib.error
 import urllib.request
 
-# mesmo bbox de pygeoapi/local.config.yml
+# mesmo bbox de gis/pygeoapi/local.config.yml
 OESTE, SUL, LESTE, NORTE = -73.9872, -33.7684, -28.6341, 5.2843
 
-# nomes usados por mapserver/default.map e pygeoapi/local.config.yml
+# nomes usados por gis/mapserver/default.map e gis/pygeoapi/local.config.yml
 INDICE = 'litoestratigrafia_1m_20260728_192458'
 ALIAS = 'litoestratigrafia_1m'
 
