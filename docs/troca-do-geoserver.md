@@ -11,12 +11,12 @@ A comparação mostra o que está publicado, não o que é usado. Os logs de ace
 | Item | GeoServer atual | Esta stack | Situação |
 | --- | --- | --- | --- |
 | Ponto único | `/ows` | `/geoserver/ows` | Atendido |
-| Rotas por serviço | `/wms`, `/wfs`, `/wcs` | Não existem | Falta |
+| Rotas por serviço | `/wms`, `/wfs`, `/wcs` | Redirecionam para `/geoserver/ows` | Atendido |
 | Rotas por workspace | `/geosgb/wms`, `/geosgb/wfs`, `/geosgb/ows` e iguais para `gestao-territorial` e `hidrogeologia` | Não existem | Falta |
 | WMTS | `/gwc/service/wmts`, 23 camadas | Ativo no MapProxy, sem rota no nginx | Falta a rota |
-| WMS em cache | `/gwc/service/wms` | Não existe, mas o WMS já passa pelo cache do MapProxy | Falta a rota |
-| Grades do WMTS | `EPSG:4326`, `EPSG:4326x2`, `WebMercatorQuad`, `WebMercatorQuadx2` | `webmercator` | Divergente |
-| Projeções | `CRS:84`, `EPSG:4326`, `EPSG:4674`, `EPSG:3857`, `EPSG:900913` | `EPSG:3857`, `EPSG:4326`, `EPSG:4674` | Falta `EPSG:900913` |
+| WMS em cache | `/gwc/service/wms` | Não existe: o MapProxy atende o WMS, com ou sem tiles | Fora do escopo |
+| Grades do WMTS | `EPSG:4326`, `EPSG:4326x2`, `WebMercatorQuad`, `WebMercatorQuadx2` | `GLOBAL_WEBMERCATOR`, `GLOBAL_MERCATOR`; `GLOBAL_GEODETIC` só no TMS e no WMS | Divergente: sem grade 4326 no WMTS, aceito |
+| Projeções | `CRS:84`, `EPSG:4326`, `EPSG:4674`, `EPSG:3857`, `EPSG:900913` | `EPSG:3857`, `EPSG:900913`, `EPSG:4326`, `EPSG:4674` | Atendido |
 | OGC API | Fora do GeoServer, em `/ogcapi` (ver [OGC API](#ogc-api)) | `/ogcapi` | Atendido |
 | WCS | Sem coberturas listadas | `bluemarble`, de exemplo | Sem impacto |
 | `/web` e `/rest` | Fechados ao público | Não existem | Sem impacto |
@@ -25,13 +25,18 @@ A comparação mostra o que está publicado, não o que é usado. Os logs de ace
 
 | Operação | GeoServer atual | Esta stack | Situação |
 | --- | --- | --- | --- |
-| `GetMap` | PNG, JPEG, GIF, GeoTIFF, PDF, KML, KMZ, OpenLayers | PNG, JPEG, GIF, TIFF, GeoTIFF | Falta PDF, KML, KMZ e OpenLayers |
-| `GetFeatureInfo` | Texto, GML 2 e 3.1.1, `text/xml`, HTML, JSON | Texto e JSON anunciados, e GML responde sem ser anunciado | HTML removido de propósito |
-| `GetFeature` (WFS) | GML 2, 3.1.1 e 3.2, JSON, SHAPE-ZIP, KML, CSV | GML 2, 3.1.1 e 3.2, JSON | Falta SHAPE-ZIP, KML e CSV |
+| `GetMap` | PNG, JPEG, GIF, GeoTIFF, PDF, KML, KMZ, OpenLayers | PNG, JPEG, GIF | Sem GeoTIFF, PDF, KML, KMZ e OpenLayers |
+| `GetFeatureInfo` | Texto, GML 2 e 3.1.1, `text/xml`, HTML, JSON | Texto, GML 2 e 3.1.1, `text/xml`, JSON | HTML removido de propósito |
+| `GetFeature` (WFS) | GML 2, 3.1.1 e 3.2, JSON, SHAPE-ZIP, KML, CSV | GML 2, 3.1.1 e 3.2, JSON, SHAPE-ZIP, KML, CSV, GeoPackage | Atendido; GeoPackage é novo |
 
 Pontos de atenção:
 
-- `image/geotiff`, em minúsculas como no GeoServer, responde 500 aqui. A stack anuncia `image/GeoTIFF`.
+- O CSV difere do GeoServer na ordem das colunas: lá são `FID` primeiro e `geom` por último, e aqui `WKT` vem primeiro, sem `FID`. Quem lê por posição ou pelo nome `geom` precisa de ajuste.
+- O WMS não oferece TIFF nem GeoTIFF de propósito: o MapProxy grava o código EPSG em 16 bits e falha em `EPSG:900913`.
+- PDF no `GetMap` fica fora da troca: o MapProxy só entrega formatos `image/*`, e a saída exigiria outra rota até o MapServer.
+- O shapefile corta os nomes de campo em 10 caracteres, como `id_uni_est`.
+- O `GetFeature` entrega no máximo 5.000 feições por pedido, contra 100.000 no GeoServer. Quem baixa uma camada inteira de uma vez precisa paginar: a camada 1:1M, com 46.715 feições, exige 10 pedidos.
+- O WFS e o WCS anunciam só `EPSG:4326` e `EPSG:4674`. O WFS recusa `EPSG:3857`, mas o `GetCoverage` ainda responde nessa projeção, porque `wcs_srs` só controla o anúncio.
 - Um cliente que peça HTML no `GetFeatureInfo` recebe uma exceção. Os visualizadores que consomem o serviço atual precisam ser checados.
 - As operações `CreateStoredQuery` e `DropStoredQuery` do WFS não são anunciadas aqui.
 
@@ -47,7 +52,7 @@ O endereço fica o mesmo, `/ogcapi`, na raiz do domínio.
 | Tipo de coleção | Feature, 23 coleções | Feature, 1 coleção | Tratar com as camadas |
 | Formatos de `items` | GeoJSON, JSON-LD, HTML, CSV | GeoJSON, JSON-LD, HTML, CSV | Atendido |
 | `bbox`, `sortby`, `properties` | Respondem | Respondem | Atendido |
-| CRS de saída | CRS84, EPSG:4326, EPSG:4674 | CRS84 | Falta: `crs=` com EPSG:4674 responde 400 |
+| CRS de saída | CRS84, EPSG:4326, EPSG:4674 | CRS84, EPSG:4326, EPSG:4674 | Atendido |
 | Filtro CQL2 | Não declarado na conformidade | Declarado, e `filter=` responde | A stack oferece mais |
 | Idiomas | Português (`pt-BR`) e inglês, por `lang=` | Só `en-US`, e `lang=` não muda o texto | Falta |
 | Link `canonical` na coleção | Presente | Ausente | Falta |
@@ -57,18 +62,19 @@ O endereço fica o mesmo, `/ogcapi`, na raiz do domínio.
 
 ## Metadados dos serviços
 
-Na stack, o WMS público é o do MapProxy, e o WFS e o WCS são os do MapServer. Por isso, os metadados ficam em arquivos diferentes.
+Na stack, o WMS público é o do MapProxy, e o WFS e o WCS são os do MapServer. Por isso, os metadados ficam em arquivos diferentes. O MapProxy não tem metadados por idioma, e o padrão da stack é o português (`pt-BR`).
 
 | Campo | GeoServer atual | WMS (MapProxy) | WFS (MapServer) | WCS (MapServer) |
 | --- | --- | --- | --- | --- |
-| Título | `SGB/CPRM WMS Server`, `WFS Server`, `WCS Server`, `WMTS Server` | Exemplo do MapProxy | Texto de teste | Vazio em 2.0.1 |
-| Resumo | `SGB/CPRM Web Map Service` e equivalentes | Exemplo do MapProxy | Texto de teste | Vazio em 2.0.1 |
-| Palavras-chave | Preenchidas | Ausentes | Ausentes | Ausentes |
-| Organização | `CPRM - Geological Survey of Brazil` | Ausente | Ausente | Ausente |
-| Contato | Nome, cargo e e-mail | Ausente | Ausente | Ausente |
-| Endereço | Rio de Janeiro, RJ, CEP 22290240, Brazil | Ausente | Ausente | Ausente |
-| Taxas | `NONE` | `none` | Ausente | Ausente |
-| Restrições de acesso | `NONE` | `none` | Ausente | Ausente |
+| Título | `SGB/CPRM WMS Server`, `WFS Server`, `WCS Server`, `WMTS Server` | `Servidor de Mapas do SGB/CPRM` | `Servidor WFS do SGB/CPRM` | `Servidor WCS do SGB/CPRM` |
+| Resumo | `SGB/CPRM Web Map Service` e equivalentes | Preenchido | Preenchido | Preenchido |
+| Palavras-chave | Preenchidas | Preenchidas | Preenchidas | Preenchidas |
+| Organização | `CPRM - Geological Survey of Brazil` | `Serviço Geológico do Brasil - SGB/CPRM` | Igual ao WMS | Igual ao WMS |
+| Contato | Nome, cargo e e-mail | `Divisão de Geoprocessamento`, sem e-mail | Pessoa, cargo, telefone e e-mail do OGC API | Igual ao WFS |
+| Endereço | Rio de Janeiro, RJ, CEP 22290240, Brazil | `Av Pasteur, 404, Urca`, Rio de Janeiro | Igual ao WMS | Igual ao WMS |
+| Taxas | `NONE` | `none` | `none` | `none` |
+| Restrições de acesso | `NONE` | `none` | `Licença CC-BY 4.0` | `Licença CC-BY 4.0` |
+| Idiomas | Um, em inglês | Só português | Português e inglês, por `LANGUAGE` no 2.0 | Português e inglês, por `ACCEPTLANGUAGES` |
 
 ### Metadados do OGC API
 
@@ -89,7 +95,7 @@ Na stack, `pygeoapi/local.config.yml` ainda traz os textos de exemplo. O serviç
 | Serviço | Arquivo | Chaves |
 | --- | --- | --- |
 | WMS, e WMTS quando tiver rota | `mapproxy/data/mapproxy.yaml` | `services.wms.md`: `title`, `abstract`, `contact`, `fees`, `access_constraints`, `keyword_list` |
-| WFS e WCS | `mapserver/default.map` | `ows_*` no `METADATA` do `WEB`, ainda a validar nesta versão, em especial o título e o resumo do WCS 2.0.1 |
+| WFS e WCS | `mapserver/default.map` | `ows_*`, `wfs_*` e `wcs_*` no `METADATA` do `WEB`, com `.en` nas chaves em inglês |
 | OGC API | `pygeoapi/local.config.yml` | `metadata.identification`, `metadata.provider`, `metadata.contact` e `server.languages`, com textos por idioma |
 
 ### Conferir antes de copiar
@@ -105,7 +111,7 @@ O GeoServer atual tem inconsistências que não valem a pena levar para a stack:
 
 ## Antes da virada
 
-- Trocar `PUBLIC_HOST` no `.env` e as quatro chaves `*_onlineresource` em `mapserver/default.map` para `geoservicos.sgb.gov.br`, e instalar o certificado real.
+- Trocar `PUBLIC_HOST` no `.env` e as duas chaves `wfs_onlineresource` e `wcs_onlineresource` em `mapserver/default.map` para `geoservicos.sgb.gov.br`, e instalar o certificado real.
 - Avisar quem usa o QGIS: depois de uma troca de formatos ou rotas, ele pode manter o `GetCapabilities` anterior por até 24 horas.
 
 ## Para outro momento: camadas

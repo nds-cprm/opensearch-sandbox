@@ -53,6 +53,7 @@ O nginx é a entrada única. A porta 443 do host vai para o `:8443` do nginx, co
 | `/ogcapi` | `pygeoapi:8000` | uwsgi |
 | `/geoserver/ows`, `SERVICE=WMS` | `mapproxy:8000` | uwsgi |
 | `/geoserver/ows`, `SERVICE=WFS` ou `WCS` | `mapserver:8080` | FastCGI |
+| `/geoserver/wms`, `/wfs` e `/wcs` | Redirecionam para `/geoserver/ows` | 301 ou 308 |
 | `:8081/geoserver` (interna, com WMS) | `mapserver:8080` | FastCGI |
 | `:9200/` | `opensearch-node1` e `opensearch-node2` | HTTP |
 
@@ -80,6 +81,8 @@ Pontos que atravessam vários arquivos:
 - Também é possível usar o caminho, desde que case com `MS_MAP_PATTERN` (`^/var/lib/mapserver/`).
 - Sem `map=`, a requisição falha de propósito (`MS_MAPFILE ""`).
 
+As URLs por serviço do GeoServer redirecionam para `/geoserver/ows` e acrescentam `service=` quando falta, porque lá o caminho definia o serviço. `POST` usa 308, porque um 301 perde o XML em muitos clientes. O `Location` leva a URL completa, apesar do `absolute_redirect off`: o QGIS não resolve caminho relativo e falha com `Protocol "" is unknown`.
+
 A rota externa é uma lista de permissão, definida no `map $args $ows_destino` do nginx. Aceita `GET` e `HEAD` em `/geoserver/ows`, com um único `service=wms|wfs|wcs`, e não deve ser trocada por bloqueios pontuais, porque há outros caminhos até um mapa:
 
 - `service=WFS&mode=map` devolve PNG, porque os modos CGI ignoram o `SERVICE`.
@@ -92,7 +95,7 @@ Por isso, a rota externa também recusa `mode`, `SERVICE` repetido e nomes com `
 ### HTTPS
 
 - O certificado fica em `nginx/certs/` (`fullchain.pem` e `privkey.pem`), fora do git e montado somente leitura. Sem esses arquivos, o nginx não inicia. O container roda com UID 101, que precisa conseguir ler a chave. Depois de renovar, use `docker compose restart nginx`.
-- O nome público está em dois lugares: `PUBLIC_HOST` no `.env`, usado pelo pygeoapi, e `wfs_onlineresource`, `wcs_onlineresource`, `ows_service_onlineresource` e `ows_contactonlineresource` em `mapserver/default.map`, que não lê variáveis de ambiente. Todos precisam coincidir, ou os clientes recebem URLs erradas. Só o MapProxy monta a URL a partir do pedido.
+- O nome público está em dois lugares: `PUBLIC_HOST` no `.env`, usado pelo pygeoapi, e `wfs_onlineresource` e `wcs_onlineresource` em `mapserver/default.map`, que não lê variáveis de ambiente. Todos precisam coincidir, ou os clientes recebem URLs erradas. Só o MapProxy monta a URL a partir do pedido.
 - Depois de mudar `PUBLIC_HOST`, recrie o pygeoapi com `docker compose up -d pygeoapi`, porque o OpenAPI é gerado na subida.
 - Para desenvolvimento, gere um certificado autoassinado:
 
@@ -105,13 +108,15 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout nginx/certs/privkey.p
 ### MapProxy
 
 - `mapproxy/data/` é montado somente leitura em `/var/lib/mapproxy/config`, que é o `$HOME` lido pelo `app.py` da imagem. Sem `mapproxy.yaml` ali, o entrypoint gera um exemplo.
-- `mapproxy/cache/` guarda os tiles em layout `tms`, em `<cache>/<camada>/<grade>`.
+- `mapproxy/cache/` guarda os tiles em layout `tms`, em `<cache>/<grade>`: `litoestratigrafia/GLOBAL_WEBMERCATOR`, `GLOBAL_GEODETIC` e `GLOBAL_MERCATOR`. O cache usa `use_grid_names` e não pode usar `cache.directory`, que o MapProxy recusa com mais de uma grade.
+- O WMTS ignora a `GLOBAL_GEODETIC`, que o MapProxy considera incompatível, e lista só as outras duas. O TMS e o WMS usam as três.
 - Só o WMS é exposto. WMTS, TMS, KML e `/demo` seguem ativos no `mapproxy.yaml`, mas sem rota no nginx.
 - Como é o único WMS externo, a fonte usa `wms_opts` para repassar `GetFeatureInfo` e `GetLegendGraphic` ao MapServer.
-- `featureinfo_types` precisa acompanhar o `wms_getfeatureinfo_formatlist` do mapfile. O MapProxy anuncia a lista sem consultar a fonte, e `xml` vira `text/xml` na 1.3.0, que o MapServer recusa. O QGIS trata `text/xml` e `application/json` como saída "feature", e `application/vnd.ogc.gml` não pode ser anunciado na 1.3.0, embora o pedido funcione.
+- `featureinfo_types` precisa acompanhar o `wms_getfeatureinfo_formatlist` do mapfile. O MapProxy anuncia a lista sem consultar a fonte, e `xml` vira `text/xml` na 1.3.0. O QGIS trata `text/xml` e `application/json` como saída "feature" e pede `application/json`, e `application/vnd.ogc.gml` não pode ser anunciado na 1.3.0, embora o pedido funcione.
 - `localhost` dentro do container é o próprio MapProxy, e `mapserver:8080` fala FastCGI, não HTTP. Por isso, a fonte passa pela porta interna do nginx (`http://nginx:8081/geoserver?...`), a única com WMS.
+- `image_formats` deixa o TIFF de fora de propósito: o MapProxy grava o código EPSG em 16 bits, e `image/tiff` e `image/geotiff` falham em `EPSG:900913`.
 - O serviço só lê o YAML ao iniciar: depois de editar, use `docker compose restart mapproxy`.
-- `mapproxy/data/seed.yaml` limita o seed à cobertura `brasil`, o mesmo `EXTENT` de `mapserver/default.map`. Até o nível 10 são 24.864 tiles, contra 1.398.080 do mundo inteiro. Para conferir antes de rodar, use `mapproxy-seed --dry-run`.
+- `mapproxy/data/seed.yaml` limita o seed à cobertura `brasil`, o mesmo `EXTENT` de `mapserver/default.map`. Até o nível 10 são cerca de 73 mil tiles, somando as três grades. Para conferir antes de rodar, use `mapproxy-seed --dry-run`.
 
 ### Nomes de índice
 
@@ -129,9 +134,13 @@ O driver ES do GDAL não abre alias pelo nome, mas aceita curingas. Para seguir 
 - Campo novo precisa de `gml_properties.<campo>_alias` (WFS) e `wms_properties.<campo>_alias` (WMS). `ows_*` não vale para o WFS.
 - `gml_exclude_items` e `wms_exclude_items` escondem `_id`, `id` e `type`.
 - Requisições com filtro são recortadas pelo `EXTENT` do mapfile, que precisa cobrir todos os dados. Sem isso, as contagens ficam menores, sem erro.
-- GeoJSON sai com `OUTPUTFORMAT=application/json`. As listas `*_formatlist` comparam o pedido com o `NAME` da saída, por isso o nome é o próprio MIME. O `wfs_getfeature_formatlist` fica no `WEB`: na camada, o formato funciona, mas não é anunciado no `GetCapabilities`. O identificador sai só na propriedade `fid`, sem `id` na feição.
+- GeoJSON sai com `OUTPUTFORMAT=application/json` ou `json`. O `wfs_getfeature_formatlist` aceita o pedido pelo `NAME` ou pelo MIME, mas o WFS 1.0.0 imprime o `NAME` como tag XML: nome com `/` deixa o `GetCapabilities` inválido. Já o `wms_getfeatureinfo_formatlist` compara só com o `NAME`, por isso lá o nome é o próprio MIME. O `wfs_getfeature_formatlist` fica no `WEB`: na camada, o formato funciona, mas não é anunciado no `GetCapabilities`. O identificador sai só na propriedade `fid`, sem `id` na feição.
 
-O `GetFeatureInfo` entrega `text/plain` e `application/json`. O HTML foi removido de propósito: os templates do MapServer não percorrem colunas, e cada camada exigiria o próprio template.
+`wfs_maxfeatures` limita cada `GetFeature` a 5.000 feições, em todas as saídas, e o restante vem por paginação, com `COUNT` e `STARTINDEX`. O QGIS pagina sozinho.
+
+O WFS também entrega `SHAPE-ZIP`, `KML`, `GPKG` e `csv`. Sem `CONFIG "OSR_DEFAULT_AXIS_MAPPING_STRATEGY"` no mapfile, o GDAL inverte as coordenadas do KML em 4326 e 4674. O CSV depende do driver do GDAL compilado na imagem `ndscprm/mapserver` (`-DOGR_ENABLE_DRIVER_CSV=ON`), e a geometria sai em WKT na primeira coluna.
+
+O `GetFeatureInfo` entrega `text/plain`, `application/json` e GML. O GML 2 (`application/vnd.ogc.gml`) é embutido no MapServer, e o 3.1.1 vem das saídas `OGR/GML`, por `text/xml`, `text/xml; subtype=gml/3.1.1` e `application/vnd.ogc.gml/3.1.1`. O MapProxy só anuncia `text/xml` na 1.3.0 e `application/vnd.ogc.gml` na 1.1.1; os demais respondem por pedido direto, e `application/vnd.ogc.gml/3.1.1` volta como `text/plain`. O HTML foi removido de propósito: os templates do MapServer não percorrem colunas, e cada camada exigiria o próprio template.
 
 O GeoJSON aceita uma camada por resposta. Com duas camadas do MapServer no mesmo pedido e resultado nas duas, o JSON sai truncado e o MapProxy responde 500. O texto não tem esse limite. Ao publicar outra camada, crie uma fonte por camada no `mapproxy.yaml`, com `layers:` apontando para a camada, e não para `CONEXAO_OPENSEARCH`.
 
