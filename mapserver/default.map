@@ -9,6 +9,8 @@ MAP
   UNITS DD
   SHAPEPATH "./data"
   IMAGECOLOR 255 255 255
+  # os dados são lon,lat: sem isto, o GDAL inverte as coordenadas ao gerar o KML
+  CONFIG "OSR_DEFAULT_AXIS_MAPPING_STRATEGY" "TRADITIONAL_GIS_ORDER"
   DEBUG 5
 
   WEB
@@ -16,21 +18,27 @@ MAP
       "wms_title"            "Meu Servidor de Mapas WMS"
       "wms_abstract"         "Serviço de mapas dinâmico rodando em Docker e FastCGI."
       "wms_onlineresource"   "http://nginx:8081/geoserver?MAP=default&" # fonte interna: o WMS externo é o do MapProxy
-      "wms_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
+      "wms_srs"              "EPSG:4326 EPSG:3857 EPSG:900913 EPSG:4674"  # Projeções suportadas
       "wms_enable_request"   "*"                               # Permite GetCapabilities, GetMap, etc.
-      "wms_getfeatureinfo_formatlist" "application/json" # o MapProxy anuncia este; ver featureinfo_types
+      "wms_getfeatureinfo_formatlist" "application/json,application/vnd.ogc.gml/3.1.1,text/xml; subtype=gml/3.1.1,text/xml" # ver featureinfo_types
 
       "wfs_title"            "Meu Servidor de Feições WFS"
       "wfs_abstract"         "Serviço de feições rodando em Docker e FastCGI."
       "wfs_onlineresource"   "https://localhost/geoserver/ows?" # mesmo host de PUBLIC_HOST no .env; o nginx fixa o mapfile
-      "wfs_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
+      "wfs_srs"              "EPSG:4326 EPSG:4674"  # Projeções suportadas
       "wfs_enable_request"   "*"                               # Permite GetCapabilities, GetFeature, etc.
-      "wfs_getfeature_formatlist" "application/json"           # no WEB para sair no GetCapabilities
+      # limita cada pedido, em todas as saídas: os formatos em arquivo são montados em
+      # memória, e cerca de 10 KB por feição precisam caber nos 60 s do nginx. Sem as
+      # outras duas chaves, hits devolve o limite como total e numberMatched sai unknown
+      "wfs_maxfeatures"      "5000"
+      "wfs_maxfeatures_ignore_for_resulttype_hits" "true"
+      "wfs_compute_number_matched" "true"
+      "wfs_getfeature_formatlist" "application/json,SHAPE-ZIP,KML,GPKG"           # no WEB para sair no GetCapabilities
 
       "wcs_label"            "Meu Servidor de Coberturas WCS"
       "wcs_description"      "Serviço de coberturas rodando em Docker e FastCGI."
       "wcs_onlineresource"   "https://localhost/geoserver/ows?" # mesmo host de PUBLIC_HOST no .env
-      "wcs_srs"              "EPSG:4326 EPSG:3857 EPSG:4674"  # Projeções suportadas
+      "wcs_srs"              "EPSG:4326 EPSG:4674"  # Projeções suportadas
       "wcs_enable_request"   "*"                               # Permite GetCapabilities, GetCoverage, etc.
 
       # WFS e WCS repetem estes dois no GetCapabilities; sem eles, saem com href=""
@@ -55,6 +63,78 @@ MAP
     FORMATOPTION "STORAGE=stream"
     FORMATOPTION "FORM=SIMPLE"
   END
+
+  # nomes usados pelo GeoServer substituído
+  OUTPUTFORMAT
+    NAME "SHAPE-ZIP"
+    DRIVER "OGR/ESRI Shapefile"
+    MIMETYPE "application/zip"
+    FORMATOPTION "STORAGE=memory"
+    FORMATOPTION "FORM=zip"
+    FORMATOPTION "FILENAME=feicoes.zip"
+    FORMATOPTION "LCO:ENCODING=UTF-8"
+  END
+
+  OUTPUTFORMAT
+    NAME "KML"
+    DRIVER "OGR/LIBKML"
+    MIMETYPE "application/vnd.google-earth.kml+xml"
+    FORMATOPTION "STORAGE=memory"
+    FORMATOPTION "FORM=simple"
+    FORMATOPTION "FILENAME=feicoes.kml"
+  END
+
+  OUTPUTFORMAT
+    NAME "GPKG"
+    DRIVER "OGR/GPKG"
+    MIMETYPE "application/geopackage+sqlite3"
+    FORMATOPTION "STORAGE=memory"
+    FORMATOPTION "FORM=simple"
+    FORMATOPTION "FILENAME=feicoes.gpkg"
+  END
+
+  # GML 3.1.1 do GetFeatureInfo; o 2 é o application/vnd.ogc.gml, embutido no MapServer
+  OUTPUTFORMAT
+    NAME "application/vnd.ogc.gml/3.1.1"
+    DRIVER "OGR/GML"
+    MIMETYPE "application/vnd.ogc.gml/3.1.1"
+    FORMATOPTION "STORAGE=memory"
+    FORMATOPTION "FORM=simple"
+    FORMATOPTION "FILENAME=feicoes.gml"
+    FORMATOPTION "DSCO:FORMAT=GML3"
+  END
+
+  OUTPUTFORMAT
+    NAME "text/xml; subtype=gml/3.1.1"
+    DRIVER "OGR/GML"
+    MIMETYPE "text/xml; subtype=gml/3.1.1"
+    FORMATOPTION "STORAGE=memory"
+    FORMATOPTION "FORM=simple"
+    FORMATOPTION "FILENAME=feicoes.gml"
+    FORMATOPTION "DSCO:FORMAT=GML3"
+  END
+
+  OUTPUTFORMAT
+    NAME "text/xml"
+    DRIVER "OGR/GML"
+    MIMETYPE "text/xml"
+    FORMATOPTION "STORAGE=memory"
+    FORMATOPTION "FORM=simple"
+    FORMATOPTION "FILENAME=feicoes.gml"
+    FORMATOPTION "DSCO:FORMAT=GML3"
+  END
+
+  # exige GDAL com -DOGR_ENABLE_DRIVER_CSV=ON, ausente da imagem atual. Ao ativar,
+  # acrescentar csv ao wfs_getfeature_formatlist
+  # OUTPUTFORMAT
+  #   NAME "csv"
+  #   DRIVER "OGR/CSV"
+  #   MIMETYPE "text/csv; charset=UTF-8"
+  #   FORMATOPTION "STORAGE=memory"
+  #   FORMATOPTION "FORM=simple"
+  #   FORMATOPTION "FILENAME=feicoes.csv"
+  #   FORMATOPTION "LCO:GEOMETRY=AS_WKT"
+  # END
 
   PROJECTION
     "init=epsg:4326"

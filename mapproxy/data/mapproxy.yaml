@@ -35,9 +35,11 @@ services:
     md:
       title: MapProxy WMS Proxy
       abstract: This is a minimal MapProxy example.
-    srs: ['EPSG:3857', 'EPSG:4326', 'EPSG:4674']
-    # o padrão inclui xml, que na 1.3.0 vira text/xml, recusado pelo MapServer
-    featureinfo_types: [text, json]
+    srs: ['EPSG:3857', 'EPSG:900913', 'EPSG:4326', 'EPSG:4674']
+    # sem TIFF, que o padrão inclui: o MapProxy grava o EPSG em 16 bits e falha em EPSG:900913
+    image_formats: ['image/png', 'image/jpeg', 'image/gif']
+    # xml vira text/xml na 1.3.0 e application/vnd.ogc.gml nas outras; GML 3.1.1 só por pedido direto
+    featureinfo_types: [text, xml, json]
 
 layers:
   - name: litoestratigrafia
