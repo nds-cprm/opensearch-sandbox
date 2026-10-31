@@ -32,9 +32,22 @@ services:
       use_grid_names: true
   wmts:
   wms:
+    # só um idioma: o MapProxy não tem metadados por idioma. WMTS e TMS herdam este md
     md:
-      title: MapProxy WMS Proxy
-      abstract: This is a minimal MapProxy example.
+      title: Servidor de Mapas do SGB/CPRM
+      abstract: Serviço de mapas para disponibilização de dados geológicos do Serviço Geológico do Brasil
+      contact:
+        person: Divisão de Geoprocessamento
+        organization: Serviço Geológico do Brasil - SGB/CPRM
+        address: Av Pasteur, 404, Urca
+        city: Rio de Janeiro
+        state: Rio de Janeiro
+        postcode: '22290240'
+        country: Brasil
+      fees: none
+      access_constraints: none
+      keyword_list:
+        - keywords: [geoespacial, dados, geologia, mapas]
     srs: ['EPSG:3857', 'EPSG:900913', 'EPSG:4326', 'EPSG:4674']
     # sem TIFF, que o padrão inclui: o MapProxy grava o EPSG em 16 bits e falha em EPSG:900913
     image_formats: ['image/png', 'image/jpeg', 'image/gif']
@@ -44,18 +57,18 @@ services:
 layers:
   - name: litoestratigrafia
     title: Unidades Litoestratigráficas 1:1.000.000 (SGB)
-    sources: [litoestratigrafia_cache]
+    sources: [litoestratigrafia]
 
 caches:
-  litoestratigrafia_cache:
-    grids: [webmercator]
+  litoestratigrafia:
+    grids: [GLOBAL_WEBMERCATOR, GLOBAL_GEODETIC, GLOBAL_MERCATOR]
     sources: [sgb_wms]
-    # served by nginx straight from disk: one grid per cache, tms layout
-    # (<z>/<x>/<y>, the same as the WMTS URL) in <cache dir>/<layer>/<grid>
+    # <cache dir>/<cache>/<grade>, em layout tms (<z>/<x>/<y>). Sem cache.directory:
+    # ele põe todas as grades no mesmo caminho, e os tiles se misturam
     cache:
       type: file
       directory_layout: tms
-      directory: ${MAPPROXY_CACHE_DIR}/litoestratigrafia/webmercator
+      use_grid_names: true
 
 sources:
   sgb_wms:
@@ -69,10 +82,6 @@ sources:
       layers: CONEXAO_OPENSEARCH
       # the layer only covers Brazil: keep the rest of the tiles transparent
       transparent: true
-
-grids:
-  webmercator:
-    base: GLOBAL_WEBMERCATOR
 
 globals:
   cache:

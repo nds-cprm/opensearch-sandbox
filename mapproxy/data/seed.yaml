@@ -8,7 +8,7 @@
 
 seeds:
   myseed1:
-    caches: [litoestratigrafia_cache]
+    caches: [litoestratigrafia]
     # grids: []
     coverages: [brasil]
     levels:
@@ -18,7 +18,7 @@ seeds:
 
 cleanups:
   myclean1:
-    caches: [litoestratigrafia_cache]
+    caches: [litoestratigrafia]
     remove_before:
       days: 14
     levels:
